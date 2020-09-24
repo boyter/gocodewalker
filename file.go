@@ -218,7 +218,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 	// Now we process the directories after hopefully giving the
 	// channel some files to process
 	for _, dir := range dirs {
-		shouldIgnore := false
+		var shouldIgnore bool
 
 		// Check against the ignore files we have if the file we are looking at
 		// should be ignored
