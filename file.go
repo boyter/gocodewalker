@@ -17,9 +17,10 @@ import (
 	"sync"
 )
 
-// TerminateWalkError error which indicates that the walker was terminated
-var TerminateWalkError = errors.New("walker terminated")
+// ErrTerminateWalk error which indicates that the walker was terminated
+var ErrTerminateWalk = errors.New("walker terminated")
 
+// File is a struct returned which contains the
 type File struct {
 	Location string
 	Filename string
@@ -41,6 +42,8 @@ type FileWalker struct {
 	UniqueId               string
 }
 
+// NewFileWalker constructs a filewalker, which will walk the supplied directory
+// and output File results to the supplied queue as it finds them
 func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 	return &FileWalker{
 		walkMutex:              sync.Mutex{},
@@ -56,7 +59,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 	}
 }
 
-// Call to get the state of the file walker and determine
+// Walking gets the state of the file walker and determine
 // if we are walking or not
 func (f *FileWalker) Walking() bool {
 	f.walkMutex.Lock()
@@ -64,7 +67,7 @@ func (f *FileWalker) Walking() bool {
 	return f.isWalking
 }
 
-// Call to have the walker break out of walking and return as
+// Terminate have the walker break out of walking and return as
 // soon as it possibly can. This is needed because
 // this walker needs to work in a TUI interactive mode and
 // as such we need to be able to end old processes
@@ -74,10 +77,10 @@ func (f *FileWalker) Terminate() {
 	f.terminateWalking = true
 }
 
-// Starts walking the supplied directory with the supplied settings
-// and putting files that mach into the supplied slice
+// Start will start walking the supplied directory with the supplied settings
+// and putting files that mach into the supplied channel.
 // Returns usual ioutil errors if there is a file issue
-// and a TerminateWalkError if terminate is called while walking
+// and a ErrTerminateWalk if terminate is called while walking
 func (f *FileWalker) Start() error {
 	f.walkMutex.Lock()
 	f.isWalking = true
@@ -99,7 +102,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 	f.walkMutex.Lock()
 	if f.terminateWalking == true {
 		f.walkMutex.Unlock()
-		return TerminateWalkError
+		return ErrTerminateWalk
 	}
 	f.walkMutex.Unlock()
 
@@ -263,7 +266,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 	return nil
 }
 
-// Walk the supplied directory backwards looking for .git or .hg
+// FindRepositoryRoot given the supplied directory backwards looking for .git or .hg
 // directories indicating we should start our search from that
 // location as its the root.
 // Returns the first directory below supplied with .git or .hg in it
@@ -314,7 +317,7 @@ func checkForGitOrMercurial(curdir string) bool {
 	return false
 }
 
-// A custom version of extracting extensions for a file
+// GetExtension is a custom version of extracting extensions for a file
 // which deals with extensions specific to code such as
 // .travis.yml and the like
 func GetExtension(name string) string {
