@@ -9,7 +9,6 @@ package file
 import (
 	"errors"
 	"github.com/boyter/go-code-walker/go-gitignore"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -32,7 +31,7 @@ type FileWalker struct {
 	isWalking              bool
 	directory              string
 	fileListQueue          chan *File
-	LocationExcludePattern []string // Case sensitive patterns which exclude files
+	LocationExcludePattern []string // Case-sensitive patterns which exclude files
 	PathExclude            []string // Paths to always ignore such as .git,.svn and .hg
 	IgnoreIgnoreFile       bool     // Should .ignore files be respected?
 	IgnoreGitIgnore        bool     // Should .gitignore files be respected?
@@ -100,25 +99,31 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 	// NB have to call unlock not using defer because method is recursive
 	// and will deadlock if not done manually
 	f.walkMutex.Lock()
-	if f.terminateWalking == true {
+	if f.terminateWalking {
 		f.walkMutex.Unlock()
 		return ErrTerminateWalk
 	}
 	f.walkMutex.Unlock()
 
-	fileInfos, err := ioutil.ReadDir(directory)
+	//fileInfos, err := ioutil.ReadDir(directory)
+	d, err := os.Open(directory)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
 
+	foundFiles, err := d.ReadDir(-1)
 	if err != nil {
 		return err
 	}
 
-	files := []os.FileInfo{}
-	dirs := []os.FileInfo{}
+	files := []os.DirEntry{}
+	dirs := []os.DirEntry{}
 
 	// We want to break apart the files and directories from the
 	// return as we loop over them differently and this avoids some
 	// nested if logic at the expense of a "redundant" loop
-	for _, file := range fileInfos {
+	for _, file := range foundFiles {
 		if file.IsDir() {
 			dirs = append(dirs, file)
 		} else {
@@ -268,7 +273,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 
 // FindRepositoryRoot given the supplied directory backwards looking for .git or .hg
 // directories indicating we should start our search from that
-// location as its the root.
+// location as it's the root.
 // Returns the first directory below supplied with .git or .hg in it
 // otherwise the supplied directory
 func FindRepositoryRoot(startDirectory string) string {

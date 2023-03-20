@@ -10,7 +10,7 @@ https://pkg.go.dev/github.com/boyter/go-code-walker
 Package provides file operations specific to code repositories such as walking the file tree obeying .ignore and .gitignore files
 or looking for the root directory assuming already in a git project.
 
-Note that it currently has a dependancy on go-gitignore which is pulled in here to avoid external dependencies. This needs to be rewritten
+Note that it currently has a dependency on go-gitignore which is pulled in here to avoid external dependencies. This needs to be rewritten
 as there are some bugs in that implementation.
 
 Example of usage,
@@ -33,3 +33,7 @@ only adding files with the go extension into the queue.
 
 All code is dual-licenced as either MIT or Unlicence.
 Note that as an Australian I cannot put this into the public domain, hence the choice most liberal licences I can find.
+
+### Package
+
+Packaging is done through https://goreleaser.com/ 
