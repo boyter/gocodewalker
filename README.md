@@ -19,9 +19,9 @@ as there are some bugs in that implementation.
 Example of usage,
 
 ```
-fileListQueue := make(chan *file.File, 100)
+fileListQueue := make(chan *gocodewalker.File, 100)
 
-fileWalker := file.NewFileWalker(".", fileListQueue)
+fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
 fileWalker.AllowListExtensions = append(fileWalker.AllowListExtensions, "go")
 
 go fileWalker.Start()
