@@ -1,11 +1,14 @@
-# go-code-walker
+# gocodewalker
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/boyter/go-code-walker)](https://goreportcard.com/report/github.com/boyter/go-code-walker)
-[![Str Count Badge](https://sloc.xyz/github/boyter/go-code-walker/)](https://github.com/boyter/go-code-walker/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/boyter/gocodewalker)](https://goreportcard.com/report/github.com/boyter/gocodewalker)
+[![Str Count Badge](https://sloc.xyz/github/boyter/gocodewalker/)](https://github.com/boyter/gocodewalker/)
 
 Library to help with walking of code directories in Go
 
-https://pkg.go.dev/github.com/boyter/go-code-walker
+NB this was moved from go-code-walker due to the name being annoying and to ensure it has a unique package name. Should still be drop in replaceable
+so long as you refer to the new package name.
+
+https://pkg.go.dev/github.com/boyter/gocodewalker
 
 Package provides file operations specific to code repositories such as walking the file tree obeying .ignore and .gitignore files
 or looking for the root directory assuming already in a git project.

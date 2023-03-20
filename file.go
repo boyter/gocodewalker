@@ -36,9 +36,7 @@ type FileWalker struct {
 	IgnoreIgnoreFile       bool     // Should .ignore files be respected?
 	IgnoreGitIgnore        bool     // Should .gitignore files be respected?
 	IncludeHidden          bool     // Should hidden files and directories be included/walked
-	InstanceId             int
 	AllowListExtensions    []string // Which extensions should be allowed
-	UniqueId               string
 }
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
@@ -105,7 +103,6 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 	}
 	f.walkMutex.Unlock()
 
-	//fileInfos, err := ioutil.ReadDir(directory)
 	d, err := os.Open(directory)
 	if err != nil {
 		return err

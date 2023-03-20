@@ -9,7 +9,7 @@ import (
 )
 
 func TestFindRepositoryRoot(t *testing.T) {
-	// We expect this to walk back from file to cs
+	// We expect this to walk back from file to root
 	curdir, _ := os.Getwd()
 	root := FindRepositoryRoot(curdir)
 
@@ -19,7 +19,7 @@ func TestFindRepositoryRoot(t *testing.T) {
 }
 
 func TestNewFileWalker(t *testing.T) {
-	fileListQueue := make(chan *File, 1000) // NB we set buffered to ensure we get everything
+	fileListQueue := make(chan *File, 10_000) // NB we set buffered to ensure we get everything
 	curdir, _ := os.Getwd()
 	walker := NewFileWalker(curdir, fileListQueue)
 	_ = walker.Start()
@@ -35,7 +35,7 @@ func TestNewFileWalker(t *testing.T) {
 }
 
 func TestNewFileWalkerStuff(t *testing.T) {
-	fileListQueue := make(chan *File, 1000) // NB we set buffered to ensure we get everything
+	fileListQueue := make(chan *File, 10_000) // NB we set buffered to ensure we get everything
 	curdir, _ := os.Getwd()
 	walker := NewFileWalker(curdir, fileListQueue)
 
