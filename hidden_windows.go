@@ -2,7 +2,7 @@
 //go:build windows
 // +build windows
 
-package file
+package gocodewalker
 
 import (
 	"os"

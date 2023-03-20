@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Unlicense
 
-package file
+package gocodewalker
 
 import (
 	"os"
