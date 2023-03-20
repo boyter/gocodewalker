@@ -40,3 +40,17 @@ Note that as an Australian I cannot put this into the public domain, hence the c
 ### Package
 
 Packaging is done through https://goreleaser.com/ 
+
+
+### Testing
+
+Done through unit/integration tests. Otherwise see https://github.com/svent/gitignore-test
+
+```
+rg ^foo: | sort
+ag ^foo: | sort
+git grep ^foo: | sort
+sift --git ^foo: | sort
+```
+
+Should see the above matching.
