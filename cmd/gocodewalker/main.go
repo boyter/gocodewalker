@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/boyter/gocodewalker"
 	"os"
+	"strings"
 )
 
 // Proper test designed to confirm that .gitignores work as expected with globs
@@ -16,8 +17,6 @@ import (
 // gocodewalker | sort
 func main() {
 	fileListQueue := make(chan *gocodewalker.File, 10_000)
-	//fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
-	//fileWalker := gocodewalker.NewFileWalker("/Users/boyter/Documents/projects/scc", fileListQueue)
 	fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
 
 	go func() {
@@ -32,6 +31,6 @@ func main() {
 		if len(contents) > 10 {
 			contents = contents[:10]
 		}
-		fmt.Print(fmt.Sprintf("%v:%v", f.Location, string(contents)))
+		fmt.Print(fmt.Sprintf("%v:%v\n", f.Location, strings.TrimSpace(string(contents))))
 	}
 }

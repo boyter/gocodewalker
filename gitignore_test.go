@@ -10,6 +10,9 @@ import (
 func TestGitIgnore(t *testing.T) {
 	testcases := []string{
 		`/`,
+		`\`,
+		`"`,
+		`.`,
 	}
 
 	abs, _ := filepath.Abs(".")
