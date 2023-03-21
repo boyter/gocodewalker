@@ -25,7 +25,7 @@ const (
 // ErrTerminateWalk error which indicates that the walker was terminated
 var ErrTerminateWalk = errors.New("gocodewalker terminated")
 
-// File is a struct returned which contains the
+// File is a struct returned which contains the location and the filename of the file that passed all exclusion rules
 type File struct {
 	Location string
 	Filename string
@@ -146,7 +146,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 				if err == nil {
 					abs, err := filepath.Abs(directory)
 					if err != nil {
-						continue
+						return err
 					}
 
 					gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
@@ -161,7 +161,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 				if err == nil {
 					abs, err := filepath.Abs(directory)
 					if err != nil {
-						continue
+						return err
 					}
 
 					gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
