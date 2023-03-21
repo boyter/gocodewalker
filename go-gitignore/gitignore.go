@@ -27,6 +27,8 @@ type GitIgnore interface {
 	// or NewWithCache) will be invoked.
 	Match(path string) Match
 
+	MatchIsDir(path string, _isdir bool) Match
+
 	// Absolute attempts to match an absolute path against this GitIgnore. If
 	// the path is not located under the base directory of this GitIgnore, or
 	// is not matched by this GitIgnore, nil is returned.
@@ -233,6 +235,18 @@ func (i *ignore) Match(path string) Match {
 		return nil
 	}
 	_isdir := _info.IsDir()
+
+	// attempt to match the absolute path
+	return i.Absolute(_path, _isdir)
+} // Match()
+
+func (i *ignore) MatchIsDir(path string, _isdir bool) Match {
+	// ensure we have the absolute path for the given file
+	_path, _err := filepath.Abs(path)
+	if _err != nil {
+		i._errors(NewError(_err, Position{}))
+		return nil
+	}
 
 	// attempt to match the absolute path
 	return i.Absolute(_path, _isdir)

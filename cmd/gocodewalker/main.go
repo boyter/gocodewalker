@@ -16,6 +16,11 @@ import (
 // git grep ^foo: | sort
 // gocodewalker | sort
 func main() {
+	// useful for improving performance, then go tool pprof -http=localhost:8090 profile.pprof
+	//f, _ := os.Create("profile.pprof")
+	//pprof.StartCPUProfile(f)
+	//defer pprof.StopCPUProfile()
+
 	fileListQueue := make(chan *gocodewalker.File, 10_000)
 	fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
 

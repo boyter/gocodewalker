@@ -17,6 +17,11 @@ import (
 	"sync"
 )
 
+const (
+	GitIgnore = ".gitignore"
+	Ignore    = ".ignore"
+)
+
 // ErrTerminateWalk error which indicates that the walker was terminated
 var ErrTerminateWalk = errors.New("gocodewalker terminated")
 
@@ -129,37 +134,37 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 		}
 	}
 
-	// define an error handler to catch any file access errors
-	//		- record the first encountered error
-	var _error gitignore.Error
-	_errors := func(e gitignore.Error) bool {
-		if _error == nil {
-			_error = e
-		}
-		return true
-	}
-
-	// Pull out all of the ignore and gitignore files and add them
+	// Pull out all ignore and gitignore files and add them
 	// to out collection of gitignores to be applied for this pass
 	// and any subdirectories
+	// Since they can apply to the current list of files we need to ensure
+	// we do this before processing files themselves
 	for _, file := range files {
 		if !f.IgnoreGitIgnore {
-			if file.Name() == ".gitignore" {
+			if file.Name() == GitIgnore {
 				c, err := os.ReadFile(filepath.Join(directory, file.Name()))
 				if err == nil {
-					abs, _ := filepath.Abs(directory)
-					gitIgnore := gitignore.New(bytes.NewReader(c), abs, _errors) // directory would normally be filepath.Abs but we know its ok here
+					abs, err := filepath.Abs(directory)
+					if err != nil {
+						continue
+					}
+
+					gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
 					gitignores = append(gitignores, gitIgnore)
 				}
 			}
 		}
 
 		if !f.IgnoreIgnoreFile {
-			if file.Name() == ".ignore" {
+			if file.Name() == Ignore {
 				c, err := os.ReadFile(filepath.Join(directory, file.Name()))
 				if err == nil {
-					abs, _ := filepath.Abs(directory)
-					gitIgnore := gitignore.New(bytes.NewReader(c), abs, _errors) // directory would normally be filepath.Abs but we know its ok here
+					abs, err := filepath.Abs(directory)
+					if err != nil {
+						continue
+					}
+
+					gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
 					ignores = append(ignores, gitIgnore)
 				}
 			}
@@ -170,6 +175,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 	// the output before traversing into directories for more files
 	for _, file := range files {
 		shouldIgnore := false
+		joined := filepath.Join(directory, file.Name())
 
 		for _, ignore := range gitignores {
 			// we have the following situations
@@ -177,19 +183,15 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			// 2. one or more match
 			// for #1 this means we should include the file
 			// for #2 this means the last one wins since it should be the most correct
-			if ignore.Match(filepath.Join(directory, file.Name())) != nil {
-				shouldIgnore = ignore.Ignore(filepath.Join(directory, file.Name()))
+			if ignore.MatchIsDir(joined, false) != nil {
+				shouldIgnore = ignore.Ignore(joined)
 			}
 		}
 
 		for _, ignore := range ignores {
-			// we have the following situations
-			// 1. none of the gitignores match
-			// 2. one or more match
-			// for #1 this means we should include the file
-			// for #2 this means the last one wins since it should be the most correct
-			if ignore.Match(filepath.Join(directory, file.Name())) != nil {
-				shouldIgnore = ignore.Ignore(filepath.Join(directory, file.Name()))
+			// same rules as above
+			if ignore.MatchIsDir(joined, false) != nil {
+				shouldIgnore = ignore.Ignore(joined)
 			}
 		}
 
@@ -230,14 +232,14 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 
 		if !shouldIgnore {
 			for _, p := range f.LocationExcludePattern {
-				if strings.Contains(filepath.Join(directory, file.Name()), p) {
+				if strings.Contains(joined, p) {
 					shouldIgnore = true
 				}
 			}
 
 			if !shouldIgnore {
 				f.fileListQueue <- &File{
-					Location: filepath.Join(directory, file.Name()),
+					Location: joined,
 					Filename: file.Name(),
 				}
 			}
@@ -248,6 +250,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 	// channel some files to process
 	for _, dir := range dirs {
 		var shouldIgnore bool
+		joined := filepath.Join(directory, dir.Name())
 
 		// Check against the ignore files we have if the file we are looking at
 		// should be ignored
@@ -259,19 +262,15 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			// 2. one or more match
 			// for #1 this means we should include the file
 			// for #2 this means the last one wins since it should be the most correct
-			if ignore.Match(filepath.Join(directory, dir.Name())) != nil {
-				shouldIgnore = ignore.Ignore(filepath.Join(directory, dir.Name()))
+			if ignore.MatchIsDir(joined, true) != nil {
+				shouldIgnore = ignore.Ignore(joined)
 			}
 		}
 
 		for _, ignore := range ignores {
-			// we have the following situations
-			// 1. none of the gitignores match
-			// 2. one or more match
-			// for #1 this means we should include the file
-			// for #2 this means the last one wins since it should be the most correct
-			if ignore.Match(filepath.Join(directory, dir.Name())) != nil {
-				shouldIgnore = ignore.Ignore(filepath.Join(directory, dir.Name()))
+			// same rules as above
+			if ignore.MatchIsDir(joined, true) != nil {
+				shouldIgnore = ignore.Ignore(joined)
 			}
 		}
 
@@ -296,12 +295,12 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 
 		if !shouldIgnore {
 			for _, p := range f.LocationExcludePattern {
-				if strings.Contains(filepath.Join(directory, dir.Name()), p) {
+				if strings.Contains(joined, p) {
 					shouldIgnore = true
 				}
 			}
 
-			err = f.walkDirectoryRecursive(filepath.Join(directory, dir.Name()), gitignores, ignores)
+			err = f.walkDirectoryRecursive(joined, gitignores, ignores)
 			if err != nil {
 				return err
 			}
@@ -366,7 +365,6 @@ func checkForGitOrMercurial(curdir string) bool {
 // which deals with extensions specific to code such as
 // .travis.yml and the like
 func GetExtension(name string) string {
-
 	name = strings.ToLower(name)
 	if !strings.Contains(name, ".") {
 		return name
