@@ -79,9 +79,14 @@ func NewPattern(tokens []*Token) Pattern {
 	// is this pattern for directories only?
 	_directory := false
 	_last := len(tokens) - 1
-	if tokens[_last].Type == SEPARATOR {
-		_directory = true
-		tokens = tokens[:_last]
+	//if _last < 0 {
+	//	_last = 0
+	//}
+	if len(tokens) != 0 {
+		if tokens[_last].Type == SEPARATOR {
+			_directory = true
+			tokens = tokens[:_last]
+		}
 	}
 
 	// build the pattern expression
