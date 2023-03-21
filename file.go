@@ -137,7 +137,8 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, ignores []gitignor
 			if file.Name() == ".gitignore" {
 				c, err := os.ReadFile(filepath.Join(directory, file.Name()))
 				if err == nil {
-					gitIgnore := gitignore.New(bytes.NewReader(c), directory, nil) // directory would normally be filepath.Abs but we know its ok here
+					abs, _ := filepath.Abs(directory)
+					gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil) // directory would normally be filepath.Abs but we know its ok here
 					ignores = append(ignores, gitIgnore)
 				}
 			}

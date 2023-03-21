@@ -2,10 +2,9 @@ package gitignore_test
 
 import (
 	"fmt"
+	"github.com/boyter/gocodewalker/go-gitignore"
 	"strings"
 	"testing"
-
-	"github.com/denormal/go-gitignore"
 )
 
 // TestLexerNewLne tests the behavour of the gitignore.Lexer when the input

@@ -1,10 +1,9 @@
 package gitignore_test
 
 import (
+	"github.com/boyter/gocodewalker/go-gitignore"
 	"path/filepath"
 	"strings"
-
-	"github.com/denormal/go-gitignore"
 )
 
 type token struct {
@@ -182,26 +181,26 @@ Documentation/**/p*.pdf
 var (
 	// define the positions of the bad patterns
 	_GITBADPOSITION = []gitignore.Position{
-		gitignore.Position{File: "", Line: 17, Column: 19, Offset: 189},
-		gitignore.Position{File: "", Line: 18, Column: 14, Offset: 219},
-		gitignore.Position{File: "", Line: 19, Column: 8, Offset: 233},
-		gitignore.Position{File: "", Line: 20, Column: 8, Offset: 248},
+		{File: "", Line: 17, Column: 19, Offset: 189},
+		{File: "", Line: 18, Column: 14, Offset: 219},
+		{File: "", Line: 19, Column: 8, Offset: 233},
+		{File: "", Line: 20, Column: 8, Offset: 248},
 	}
 
 	// define the positions of the good patterns
 	_GITPOSITION = []gitignore.Position{
-		gitignore.Position{File: "", Line: 4, Column: 1, Offset: 23},
-		gitignore.Position{File: "", Line: 6, Column: 1, Offset: 30},
-		gitignore.Position{File: "", Line: 7, Column: 1, Offset: 34},
-		gitignore.Position{File: "", Line: 9, Column: 1, Offset: 39},
-		gitignore.Position{File: "", Line: 12, Column: 1, Offset: 104},
-		gitignore.Position{File: "", Line: 13, Column: 1, Offset: 132},
-		gitignore.Position{File: "", Line: 15, Column: 1, Offset: 150},
-		gitignore.Position{File: "", Line: 22, Column: 1, Offset: 256},
-		gitignore.Position{File: "", Line: 23, Column: 1, Offset: 280},
-		gitignore.Position{File: "", Line: 25, Column: 1, Offset: 283},
-		gitignore.Position{File: "", Line: 26, Column: 1, Offset: 295},
-		gitignore.Position{File: "", Line: 27, Column: 1, Offset: 317},
+		{File: "", Line: 4, Column: 1, Offset: 23},
+		{File: "", Line: 6, Column: 1, Offset: 30},
+		{File: "", Line: 7, Column: 1, Offset: 34},
+		{File: "", Line: 9, Column: 1, Offset: 39},
+		{File: "", Line: 12, Column: 1, Offset: 104},
+		{File: "", Line: 13, Column: 1, Offset: 132},
+		{File: "", Line: 15, Column: 1, Offset: 150},
+		{File: "", Line: 22, Column: 1, Offset: 256},
+		{File: "", Line: 23, Column: 1, Offset: 280},
+		{File: "", Line: 25, Column: 1, Offset: 283},
+		{File: "", Line: 26, Column: 1, Offset: 295},
+		{File: "", Line: 27, Column: 1, Offset: 317},
 	}
 
 	// define the token stream for the _GITIGNORE .gitignore

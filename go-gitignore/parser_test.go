@@ -1,10 +1,9 @@
 package gitignore_test
 
 import (
+	"github.com/boyter/gocodewalker/go-gitignore"
 	"strings"
 	"testing"
-
-	"github.com/denormal/go-gitignore"
 )
 
 type parsetest struct {

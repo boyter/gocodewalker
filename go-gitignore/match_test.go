@@ -1,11 +1,10 @@
 package gitignore_test
 
 import (
+	"github.com/boyter/gocodewalker/go-gitignore"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/denormal/go-gitignore"
 )
 
 func TestMatch(t *testing.T) {

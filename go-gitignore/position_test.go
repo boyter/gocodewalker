@@ -1,7 +1,7 @@
 package gitignore_test
 
 import (
-	"github.com/denormal/go-gitignore"
+	"github.com/boyter/gocodewalker/go-gitignore"
 	"testing"
 )
 

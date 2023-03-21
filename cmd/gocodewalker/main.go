@@ -9,7 +9,8 @@ import (
 // designed to work against https://github.com/svent/gitignore-test
 func main() {
 	fileListQueue := make(chan *gocodewalker.File, 10_000)
-	fileWalker := gocodewalker.NewFileWalker("/Users/boyter/Documents/projects/gitignore-test/", fileListQueue)
+	//fileWalker := gocodewalker.NewFileWalker("/Users/boyter/Documents/projects/gitignore-test/", fileListQueue)
+	fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
 
 	go func() {
 		err := fileWalker.Start()

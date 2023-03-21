@@ -248,7 +248,8 @@ func (i *ignore) Absolute(path string, isdir bool) Match {
 	}
 
 	// extract the relative path of this file
-	_prefix := len(i._base) + 1
+	_prefix := len(i._base) + 1 // BOYTERWASHERE
+	//_prefix := len(i._base)
 	_rel := string(path[_prefix:])
 	return i.Relative(_rel, isdir)
 } // Absolute()

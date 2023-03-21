@@ -54,3 +54,10 @@ sift --git ^foo: | sort
 ```
 
 Should see the above matching.
+
+
+### Info
+
+Details on how gitignores work
+
+https://stackoverflow.com/questions/71735516/proper-way-to-setup-multiple-gitignore-files-in-nested-folders-of-a-repository
