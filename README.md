@@ -21,6 +21,13 @@ fileListQueue := make(chan *gocodewalker.File, 100)
 fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
 fileWalker.AllowListExtensions = append(fileWalker.AllowListExtensions, "go")
 
+// handle the errors by printing them out and then ignore
+errorHandler := func(e error) bool {
+    fmt.Println("ERR", e.Error())
+    return true
+}
+fileWalker.SetErrorHandler(errorHandler)
+
 go fileWalker.Start()
 
 for f := range fileListQueue {
