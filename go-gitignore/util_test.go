@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/boyter/gocodewalker/go-gitignore"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,7 @@ import (
 
 func file(content string) (*os.File, error) {
 	// create a temporary file
-	_file, _err := ioutil.TempFile("", "gitignore")
+	_file, _err := os.CreateTemp("", "gitignore")
 	if _err != nil {
 		return nil, _err
 	}
@@ -38,7 +37,7 @@ func file(content string) (*os.File, error) {
 
 func dir(content map[string]string) (string, error) {
 	// create a temporary directory
-	_dir, _err := ioutil.TempDir("", "")
+	_dir, _err := os.MkdirTemp("", "")
 	if _err != nil {
 		return "", _err
 	}
@@ -56,59 +55,58 @@ func dir(content map[string]string) (string, error) {
 	//		- each key of the map is a file name
 	//		- each value of the map is the file content
 	//		- file names are relative to the temporary directory
-	if content != nil {
-		for _key, _content := range content {
-			// ensure we have content to store
-			if _content == "" {
-				continue
-			}
 
-			// should we create a directory or a file?
-			_isdir := false
-			_path := _key
-			if strings.HasSuffix(_path, "/") {
-				_path = strings.TrimSuffix(_path, "/")
-				_isdir = true
-			}
+	for _key, _content := range content {
+		// ensure we have content to store
+		if _content == "" {
+			continue
+		}
 
-			// construct the absolute path (according to the local file system)
-			_abs := _dir
-			_parts := strings.Split(_path, "/")
-			_last := len(_parts) - 1
-			if _isdir {
-				_abs = filepath.Join(_abs, filepath.Join(_parts...))
-			} else if _last > 0 {
-				_abs = filepath.Join(_abs, filepath.Join(_parts[:_last]...))
-			}
+		// should we create a directory or a file?
+		_isdir := false
+		_path := _key
+		if strings.HasSuffix(_path, "/") {
+			_path = strings.TrimSuffix(_path, "/")
+			_isdir = true
+		}
 
-			// ensure this directory exists
-			_err = os.MkdirAll(_abs, _GITMASK)
-			if _err != nil {
-				defer os.RemoveAll(_dir)
-				return "", _err
-			} else if _isdir {
-				continue
-			}
+		// construct the absolute path (according to the local file system)
+		_abs := _dir
+		_parts := strings.Split(_path, "/")
+		_last := len(_parts) - 1
+		if _isdir {
+			_abs = filepath.Join(_abs, filepath.Join(_parts...))
+		} else if _last > 0 {
+			_abs = filepath.Join(_abs, filepath.Join(_parts[:_last]...))
+		}
 
-			// create the absolute path for the target file
-			_abs = filepath.Join(_abs, _parts[_last])
+		// ensure this directory exists
+		_err = os.MkdirAll(_abs, _GITMASK)
+		if _err != nil {
+			defer os.RemoveAll(_dir)
+			return "", _err
+		} else if _isdir {
+			continue
+		}
 
-			// write the contents to this file
-			_file, _err := os.Create(_abs)
-			if _err != nil {
-				defer os.RemoveAll(_dir)
-				return "", _err
-			}
-			_, _err = _file.WriteString(_content)
-			if _err != nil {
-				defer os.RemoveAll(_dir)
-				return "", _err
-			}
-			_err = _file.Close()
-			if _err != nil {
-				defer os.RemoveAll(_dir)
-				return "", _err
-			}
+		// create the absolute path for the target file
+		_abs = filepath.Join(_abs, _parts[_last])
+
+		// write the contents to this file
+		_file, _err := os.Create(_abs)
+		if _err != nil {
+			defer os.RemoveAll(_dir)
+			return "", _err
+		}
+		_, _err = _file.WriteString(_content)
+		if _err != nil {
+			defer os.RemoveAll(_dir)
+			return "", _err
+		}
+		_err = _file.Close()
+		if _err != nil {
+			defer os.RemoveAll(_dir)
+			return "", _err
 		}
 	}
 
@@ -131,7 +129,7 @@ func exclude(content string) (string, error) {
 
 	// create the exclude file
 	_exclude := filepath.Join(_info, "exclude")
-	_err = ioutil.WriteFile(_exclude, []byte(content), _GITMASK)
+	_err = os.WriteFile(_exclude, []byte(content), _GITMASK)
 	if _err != nil {
 		defer os.RemoveAll(_dir)
 		return "", _err

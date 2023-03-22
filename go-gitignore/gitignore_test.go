@@ -312,7 +312,7 @@ func withfile(t *testing.T, test *gitignoretest, content string) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// remove permission from the temporary directory
 	_err = os.Chmod(_dir, 0)

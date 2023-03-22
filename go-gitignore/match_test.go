@@ -36,7 +36,7 @@ func TestMatch(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// perform the relative path tests
 	_cb = func(path string, isdir bool) gitignore.Match {
@@ -73,7 +73,7 @@ func TestMatch(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// remove permission from the temporary directory
 	_err = os.Chmod(_dir, 0)
@@ -123,7 +123,7 @@ func TestIgnore(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// perform the relative path tests
 	for _, _test := range _GITMATCHES {
@@ -180,7 +180,7 @@ func TestInclude(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// perform the relative path tests
 	for _, _test := range _GITMATCHES {

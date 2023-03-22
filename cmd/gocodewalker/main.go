@@ -43,6 +43,6 @@ func main() {
 		if len(contents) > 10 {
 			contents = contents[:10]
 		}
-		fmt.Print(fmt.Sprintf("%v:%v\n", f.Location, strings.TrimSpace(string(contents))))
+		fmt.Printf("%v:%v\n", f.Location, strings.TrimSpace(string(contents)))
 	}
 }

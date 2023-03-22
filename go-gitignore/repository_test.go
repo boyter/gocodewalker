@@ -486,7 +486,7 @@ func repository(t *testing.T, test *repositorytest, m []match) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// remove permission from the temporary directory
 	_err = os.Chmod(_dir, 0)
@@ -616,7 +616,7 @@ func invalid(t *testing.T, test *repositorytest) {
 	if _err != nil {
 		t.Fatalf("unable to chdir into temporary directory: %s", _err.Error())
 	}
-	defer os.Chdir(_cwd)
+	defer func(dir string) { _ = os.Chdir(dir) }(_cwd)
 
 	// remove permissions from the working directory
 	_err = os.Chmod(_dir, 0)
@@ -628,7 +628,7 @@ func invalid(t *testing.T, test *repositorytest) {
 
 	// test repository instance creating against a relative path
 	//		- the relative path exists
-	_repository, _err = test.create(gitignore.File, false)
+	_, _err = test.create(gitignore.File, false)
 	if _err == nil {
 		t.Errorf("expected repository error, got nil")
 	} else if os.IsNotExist(_err) {
