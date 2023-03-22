@@ -27,6 +27,7 @@ func main() {
 	// handle the errors by printing them out and then ignore
 	errorHandler := func(e error) bool {
 		fmt.Println("ERR", e.Error())
+
 		return true
 	}
 	fileWalker.SetErrorHandler(errorHandler)
