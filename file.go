@@ -32,18 +32,18 @@ type File struct {
 }
 
 type FileWalker struct {
+	fileListQueue          chan *File
+	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
+	directory              string
+	LocationExcludePattern []string // Case-sensitive patterns which exclude files
+	PathExclude            []string // Paths to always ignore such as .git,.svn and .hg
+	AllowListExtensions    []string // Which extensions should be allowed
 	walkMutex              sync.Mutex
 	terminateWalking       bool
 	isWalking              bool
-	directory              string
-	fileListQueue          chan *File
-	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
-	LocationExcludePattern []string         // Case-sensitive patterns which exclude files
-	PathExclude            []string         // Paths to always ignore such as .git,.svn and .hg
-	IgnoreIgnoreFile       bool             // Should .ignore files be respected?
-	IgnoreGitIgnore        bool             // Should .gitignore files be respected?
-	IncludeHidden          bool             // Should hidden files and directories be included/walked
-	AllowListExtensions    []string         // Which extensions should be allowed
+	IgnoreIgnoreFile       bool // Should .ignore files be respected?
+	IgnoreGitIgnore        bool // Should .gitignore files be respected?
+	IncludeHidden          bool // Should hidden files and directories be included/walked
 }
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
