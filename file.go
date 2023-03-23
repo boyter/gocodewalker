@@ -267,6 +267,24 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			}
 		}
 
+		if len(f.IncludeFilenameRegex) != 0 {
+			found := false
+			for _, allow := range f.IncludeFilenameRegex {
+				if allow.Match([]byte(file.Name())) {
+					found = true
+				}
+			}
+			if !found {
+				shouldIgnore = true
+			}
+		}
+		// Exclude comes after include as it takes precedence
+		for _, deny := range f.ExcludeFilenameRegex {
+			if deny.Match([]byte(file.Name())) {
+				shouldIgnore = true
+			}
+		}
+
 		// Ignore hidden files
 		if !f.IncludeHidden {
 			s, err := IsHidden(file, directory)
@@ -293,10 +311,13 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			}
 
 			// try again because we could have one of those pesky ones such as something.spec.tsx
-			ext = GetExtension(ext)
-			for _, v := range f.AllowListExtensions {
-				if v == ext {
-					a = true
+			// but only if we didn't already find something to save on a bit of processing
+			if !a {
+				ext = GetExtension(ext)
+				for _, v := range f.AllowListExtensions {
+					if v == ext {
+						a = true
+					}
 				}
 			}
 
@@ -367,6 +388,24 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 		// Comes after include as it takes precedence
 		for _, deny := range f.ExcludeDirectory {
 			if dir.Name() == deny {
+				shouldIgnore = true
+			}
+		}
+
+		if len(f.IncludeDirectoryRegex) != 0 {
+			found := false
+			for _, allow := range f.IncludeDirectoryRegex {
+				if allow.Match([]byte(dir.Name())) {
+					found = true
+				}
+			}
+			if !found {
+				shouldIgnore = true
+			}
+		}
+		// Exclude comes after include as it takes precedence
+		for _, deny := range f.ExcludeDirectoryRegex {
+			if deny.Match([]byte(dir.Name())) {
 				shouldIgnore = true
 			}
 		}
