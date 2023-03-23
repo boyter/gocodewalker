@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -35,9 +36,17 @@ type FileWalker struct {
 	fileListQueue          chan *File
 	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
 	directory              string
-	LocationExcludePattern []string // Case-sensitive patterns which exclude files
-	PathExclude            []string // Paths to always ignore such as .git,.svn and .hg
-	AllowListExtensions    []string // Which extensions should be allowed
+	LocationExcludePattern []string // Case-sensitive patterns which exclude files // same as ExcludeFilename?
+	IncludeDirectory       []string
+	ExcludeDirectory       []string // Paths to always ignore such as .git,.svn and .hg
+	IncludeFilename        []string
+	ExcludeFilename        []string
+	IncludeDirectoryRegex  []*regexp.Regexp // Must match regex as logical OR IE can match any of them
+	ExcludeDirectoryRegex  []*regexp.Regexp
+	IncludeFilenameRegex   []*regexp.Regexp
+	ExcludeFilenameRegex   []*regexp.Regexp
+	AllowListExtensions    []string // Which extensions should be allowed case sensitive
+	ExcludeListExtensions  []string // Which extensions should be excluded case sensitive
 	walkMutex              sync.Mutex
 	terminateWalking       bool
 	isWalking              bool
@@ -50,17 +59,26 @@ type FileWalker struct {
 // and output File results to the supplied queue as it finds them
 func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 	return &FileWalker{
-		walkMutex:              sync.Mutex{},
 		fileListQueue:          fileListQueue,
+		errorsHandler:          func(e error) bool { return true }, // a generic one that just swallows everything
 		directory:              directory,
+		LocationExcludePattern: nil,
+		IncludeDirectory:       nil,
+		ExcludeDirectory:       nil,
+		IncludeFilename:        nil,
+		ExcludeFilename:        nil,
+		IncludeDirectoryRegex:  nil,
+		ExcludeDirectoryRegex:  nil,
+		IncludeFilenameRegex:   nil,
+		ExcludeFilenameRegex:   nil,
+		AllowListExtensions:    nil,
+		ExcludeListExtensions:  nil,
+		walkMutex:              sync.Mutex{},
 		terminateWalking:       false,
 		isWalking:              false,
-		errorsHandler:          func(e error) bool { return true }, // if none is supplied create a generic one that just swallows everything
-		LocationExcludePattern: []string{},
-		PathExclude:            []string{},
 		IgnoreIgnoreFile:       false,
+		IgnoreGitIgnore:        false,
 		IncludeHidden:          false,
-		AllowListExtensions:    []string{},
 	}
 }
 
@@ -230,6 +248,25 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			}
 		}
 
+		if len(f.IncludeFilename) != 0 {
+			// include files
+			found := false
+			for _, allow := range f.IncludeFilename {
+				if file.Name() == allow {
+					found = true
+				}
+			}
+			if !found {
+				shouldIgnore = true
+			}
+		}
+		// Exclude comes after include as it takes precedence
+		for _, deny := range f.ExcludeFilename {
+			if file.Name() == deny {
+				shouldIgnore = true
+			}
+		}
+
 		// Ignore hidden files
 		if !f.IncludeHidden {
 			s, err := IsHidden(file, directory)
@@ -304,7 +341,6 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 				shouldIgnore = ignore.Ignore(joined)
 			}
 		}
-
 		for _, ignore := range ignores {
 			// same rules as above
 			if ignore.MatchIsDir(joined, true) != nil {
@@ -312,10 +348,25 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			}
 		}
 
+		// start by saying we didn't find it then check each possible
+		// choice to see if we did find it
+		// if we didn't find it then we should ignore
+		if len(f.IncludeDirectory) != 0 {
+			found := false
+			for _, allow := range f.IncludeDirectory {
+				if dir.Name() == allow {
+					found = true
+				}
+			}
+			if !found {
+				shouldIgnore = true
+			}
+		}
 		// Confirm if there are any files in the path deny list which usually includes
 		// things like .git .hg and .svn
-		for _, deny := range f.PathExclude {
-			if strings.HasSuffix(dir.Name(), deny) {
+		// Comes after include as it takes precedence
+		for _, deny := range f.ExcludeDirectory {
+			if dir.Name() == deny {
 				shouldIgnore = true
 			}
 		}
