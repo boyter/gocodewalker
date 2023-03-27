@@ -128,6 +128,11 @@ func (f *FileWalker) Start() error {
 	return err
 }
 
+var (
+	OsOpen     = os.Open
+	OsReadFile = os.ReadFile
+)
+
 func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitignore.GitIgnore, ignores []gitignore.GitIgnore) error {
 	// NB have to call unlock not using defer because method is recursive
 	// and will deadlock if not done manually
@@ -138,7 +143,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 	}
 	f.walkMutex.Unlock()
 
-	d, err := os.Open(directory)
+	d, err := OsOpen(directory)
 	if err != nil {
 		// nothing we can do with this so return nil and process as best we can
 		if f.errorsHandler(err) {
@@ -179,7 +184,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 	for _, file := range files {
 		if !f.IgnoreGitIgnore {
 			if file.Name() == GitIgnore {
-				c, err := os.ReadFile(filepath.Join(directory, file.Name()))
+				c, err := OsReadFile(filepath.Join(directory, file.Name()))
 				if err != nil {
 					if f.errorsHandler(err) {
 						continue // if asked to ignore it lets continue
@@ -202,7 +207,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 
 		if !f.IgnoreIgnoreFile {
 			if file.Name() == Ignore {
-				c, err := os.ReadFile(filepath.Join(directory, file.Name()))
+				c, err := OsReadFile(filepath.Join(directory, file.Name()))
 				if err != nil {
 					if f.errorsHandler(err) {
 						continue // if asked to ignore it lets continue

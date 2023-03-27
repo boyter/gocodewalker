@@ -3,6 +3,7 @@
 package gocodewalker
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -53,6 +54,29 @@ func TestNewFileWalkerStuff(t *testing.T) {
 
 	if count != 0 {
 		t.Error("Expected to find no files")
+	}
+}
+
+func TestNewFileWalkerErrorHandler(t *testing.T) {
+	OsOpen = func(name string) (*os.File, error) {
+		return nil, errors.New("error was handled")
+	}
+	defer func() { OsOpen = os.Open }()
+
+	walker := NewFileWalker(".", make(chan *File, 1000))
+
+	wasCalled := false
+	errorHandler := func(e error) bool {
+		if e.Error() == "error was handled" {
+			wasCalled = true
+		}
+		return false
+	}
+	walker.SetErrorHandler(errorHandler)
+	_ = walker.Start()
+
+	if !wasCalled {
+		t.Error("expected error to be called")
 	}
 }
 
