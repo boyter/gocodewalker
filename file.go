@@ -53,6 +53,8 @@ type FileWalker struct {
 	IgnoreIgnoreFile       bool // Should .ignore files be respected?
 	IgnoreGitIgnore        bool // Should .gitignore files be respected?
 	IncludeHidden          bool // Should hidden files and directories be included/walked
+	osOpen                 func(name string) (*os.File, error)
+	osReadFile             func(name string) ([]byte, error)
 }
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
@@ -79,6 +81,8 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
 		IncludeHidden:          false,
+		osOpen:                 os.Open,
+		osReadFile:             os.ReadFile,
 	}
 }
 
@@ -128,11 +132,6 @@ func (f *FileWalker) Start() error {
 	return err
 }
 
-var (
-	OsOpen     = os.Open
-	OsReadFile = os.ReadFile
-)
-
 func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitignore.GitIgnore, ignores []gitignore.GitIgnore) error {
 	// NB have to call unlock not using defer because method is recursive
 	// and will deadlock if not done manually
@@ -143,7 +142,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 	}
 	f.walkMutex.Unlock()
 
-	d, err := OsOpen(directory)
+	d, err := f.osOpen(directory)
 	if err != nil {
 		// nothing we can do with this so return nil and process as best we can
 		if f.errorsHandler(err) {
@@ -184,7 +183,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 	for _, file := range files {
 		if !f.IgnoreGitIgnore {
 			if file.Name() == GitIgnore {
-				c, err := OsReadFile(filepath.Join(directory, file.Name()))
+				c, err := f.osReadFile(filepath.Join(directory, file.Name()))
 				if err != nil {
 					if f.errorsHandler(err) {
 						continue // if asked to ignore it lets continue
@@ -207,7 +206,7 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 
 		if !f.IgnoreIgnoreFile {
 			if file.Name() == Ignore {
-				c, err := OsReadFile(filepath.Join(directory, file.Name()))
+				c, err := f.osReadFile(filepath.Join(directory, file.Name()))
 				if err != nil {
 					if f.errorsHandler(err) {
 						continue // if asked to ignore it lets continue

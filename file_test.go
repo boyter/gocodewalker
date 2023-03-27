@@ -58,12 +58,12 @@ func TestNewFileWalkerStuff(t *testing.T) {
 }
 
 func TestNewFileWalkerErrorHandler(t *testing.T) {
-	OsOpen = func(name string) (*os.File, error) {
+	osOpen := func(name string) (*os.File, error) {
 		return nil, errors.New("error was handled")
 	}
-	defer func() { OsOpen = os.Open }()
 
 	walker := NewFileWalker(".", make(chan *File, 1000))
+	walker.osOpen = osOpen
 
 	wasCalled := false
 	errorHandler := func(e error) bool {
