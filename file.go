@@ -330,6 +330,20 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			}
 		}
 
+		for _, deny := range f.ExcludeListExtensions {
+			ext := GetExtension(file.Name())
+			if ext == deny {
+				shouldIgnore = true
+			}
+
+			if !shouldIgnore {
+				ext = GetExtension(ext)
+				if ext == deny {
+					shouldIgnore = true
+				}
+			}
+		}
+
 		if !shouldIgnore {
 			for _, p := range f.LocationExcludePattern {
 				if strings.Contains(joined, p) {

@@ -212,19 +212,34 @@ func TestNewFileWalkerCases(t *testing.T) {
 	}
 
 	testCases := []testcase{
-		//{ // TODO implement
-		//	Name: "ExcludeListExtensions",
-		//	Case: func() (*FileWalker, chan *File) {
-		//		d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
-		//		_, _ = os.Create(filepath.Join(d, "test.txt"))
-		//
-		//		fileListQueue := make(chan *File, 10)
-		//		walker := NewFileWalker(d, fileListQueue)
-		//
-		//		walker.ExcludeListExtensions = []string{"txt"}
-		//		return walker, fileListQueue
-		//	},
-		//},
+		{
+			Name: "ExcludeListExtensions 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeListExtensions = []string{"txt"}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
+			Name: "ExcludeListExtensions 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeListExtensions = []string{"md"}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
 		{
 			Name: "AllowListExtensions 1",
 			Case: func() (*FileWalker, chan *File) {
