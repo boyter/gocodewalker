@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -255,6 +256,20 @@ func TestNewFileWalkerCases(t *testing.T) {
 			Expected: 1,
 		},
 		{
+			Name: "ExcludeListExtensions 0 Multiple",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeListExtensions = []string{"md", "go", "txt"}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
 			Name: "AllowListExtensions 0",
 			Case: func() (*FileWalker, chan *File) {
 				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
@@ -281,6 +296,90 @@ func TestNewFileWalkerCases(t *testing.T) {
 				return walker, fileListQueue
 			},
 			Expected: 1,
+		},
+		{
+			Name: "IncludeFilenameRegex 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(".*")}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "IncludeFilenameRegex 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile("test.go")}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
+			Name: "ExcludeFilenameRegex 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(".*")}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
+			Name: "ExcludeFilenameRegex 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile("nothing")}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "IncludeFilenameRegex 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(".*")}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "IncludeFilenameRegex 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile("nothing")}
+				return walker, fileListQueue
+			},
+			Expected: 0,
 		},
 	}
 
