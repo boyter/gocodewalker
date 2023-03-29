@@ -123,7 +123,7 @@ func TestNewFileWalkerIgnoreFileCases(t *testing.T) {
 			Name: ".ignorefile ignore",
 			Case: func() *FileWalker {
 				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
-				_, _ = os.Create(filepath.Join(d, ".ignore")) // this is the file we want to ignore
+				_, _ = os.Create(filepath.Join(d, ".ignore"))
 
 				fileListQueue := make(chan *File, 10)
 				walker := NewFileWalker(d, fileListQueue)
@@ -152,12 +152,11 @@ func TestNewFileWalkerIgnoreFileCases(t *testing.T) {
 			Name: ".gitignore ignore",
 			Case: func() *FileWalker {
 				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
-				_, _ = os.Create(filepath.Join(d, ".gitignore")) // this is the file we want to ignore
+				_, _ = os.Create(filepath.Join(d, ".gitignore"))
 
 				fileListQueue := make(chan *File, 10)
 				walker := NewFileWalker(d, fileListQueue)
 
-				// what we want to test is here
 				walker.IgnoreGitIgnore = true
 				return walker
 			},
@@ -167,12 +166,11 @@ func TestNewFileWalkerIgnoreFileCases(t *testing.T) {
 			Name: ".gitignore include",
 			Case: func() *FileWalker {
 				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
-				_, _ = os.Create(filepath.Join(d, ".gitignore")) // this is the file we want to ignore
+				_, _ = os.Create(filepath.Join(d, ".gitignore"))
 
 				fileListQueue := make(chan *File, 10)
 				walker := NewFileWalker(d, fileListQueue)
 
-				// what we want to test is here
 				walker.IgnoreGitIgnore = false
 				return walker
 			},
@@ -205,7 +203,7 @@ func TestNewFileWalkerIgnoreFileCases(t *testing.T) {
 	}
 }
 
-func TestNewFileWalkerCases(t *testing.T) {
+func TestNewFileWalkerFileCases(t *testing.T) {
 	type testcase struct {
 		Name     string
 		Case     func() (*FileWalker, chan *File)
