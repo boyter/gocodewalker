@@ -36,7 +36,7 @@ type FileWalker struct {
 	fileListQueue          chan *File
 	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
 	directory              string
-	LocationExcludePattern []string // Case-sensitive patterns which exclude files // same as ExcludeFilename?
+	LocationExcludePattern []string // Case-sensitive patterns which exclude directory/file matches
 	IncludeDirectory       []string
 	ExcludeDirectory       []string // Paths to always ignore such as .git,.svn and .hg
 	IncludeFilename        []string
@@ -344,18 +344,16 @@ func (f *FileWalker) walkDirectoryRecursive(directory string, gitignores []gitig
 			}
 		}
 
-		if !shouldIgnore {
-			for _, p := range f.LocationExcludePattern {
-				if strings.Contains(joined, p) {
-					shouldIgnore = true
-				}
+		for _, p := range f.LocationExcludePattern {
+			if strings.Contains(joined, p) {
+				shouldIgnore = true
 			}
+		}
 
-			if !shouldIgnore {
-				f.fileListQueue <- &File{
-					Location: joined,
-					Filename: file.Name(),
-				}
+		if !shouldIgnore {
+			f.fileListQueue <- &File{
+				Location: joined,
+				Filename: file.Name(),
 			}
 		}
 	}

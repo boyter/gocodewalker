@@ -403,6 +403,102 @@ func TestNewFileWalkerFileCases(t *testing.T) {
 	}
 }
 
+func TestNewFileWalkerDirectoryCases(t *testing.T) {
+	type testcase struct {
+		Name     string
+		Case     func() (*FileWalker, chan *File)
+		Expected int
+	}
+
+	testCases := []testcase{
+		{
+			Name: "ExcludeDirectory 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeDirectory = []string{"stuff"}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
+			Name: "ExcludeDirectory 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeDirectory = []string{"notmatching"}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "IncludeDirectory 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeDirectory = []string{"stuff"}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "IncludeDirectory 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeDirectory = []string{"otherthing"}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			osReadFile := func(name string) ([]byte, error) {
+				return nil, nil
+			}
+
+			walker, fileListQueue := tc.Case()
+			walker.osReadFile = osReadFile
+			_ = walker.Start()
+
+			c := 0
+			for range fileListQueue {
+				c++
+			}
+
+			if c != tc.Expected {
+				t.Errorf("expected %v but got %v", tc.Expected, c)
+			}
+		})
+	}
+}
+
 func TestGetExtension(t *testing.T) {
 	got := GetExtension("something.c")
 	expected := "c"
