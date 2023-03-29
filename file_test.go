@@ -475,6 +475,70 @@ func TestNewFileWalkerDirectoryCases(t *testing.T) {
 			},
 			Expected: 0,
 		},
+		{
+			Name: "IncludeDirectoryRegex 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeDirectoryRegex = []*regexp.Regexp{regexp.MustCompile("nothing")}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
+			Name: "IncludeDirectoryRegex 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.IncludeDirectoryRegex = []*regexp.Regexp{regexp.MustCompile("stuff")}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "ExcludeDirectoryRegex 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeDirectoryRegex = []*regexp.Regexp{regexp.MustCompile("stuff")}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
+		{
+			Name: "ExcludeDirectoryRegex 0",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeDirectoryRegex = []*regexp.Regexp{regexp.MustCompile(".*")}
+				return walker, fileListQueue
+			},
+			Expected: 0,
+		},
 	}
 
 	for _, tc := range testCases {
