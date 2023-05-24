@@ -23,7 +23,7 @@ or looking for the root directory assuming already in a git project.
 
 Example of usage,
 
-```
+```go
 fileListQueue := make(chan *gocodewalker.File, 100)
 
 fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
@@ -57,7 +57,7 @@ and decide if the walker should continue to process, or return.
 
 The simplest handler is the below, which if set will swallow all errors and continue as best it can.
 
-```
+```go
 errorHandler := func(e error) bool {
     return true
 }
@@ -66,7 +66,7 @@ fileWalker.SetErrorHandler(errorHandler)
 
 If you wanted to return on errors you could use the following.
 
-```
+```go
 errorHandler := func(e error) bool {
     return false
 }
@@ -76,7 +76,7 @@ fileWalker.SetErrorHandler(errorHandler)
 If you wanted to terminate walking on an error you could use the following, which would cause it to return the error,
 and then terminate all walking. This might be desirable where any error indicates a total failure.
 
-```
+```go
 errorHandler := func(e error) bool {
     fileWalker.Terminate()
     return false
