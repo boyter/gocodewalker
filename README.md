@@ -84,11 +84,6 @@ errorHandler := func(e error) bool {
 fileWalker.SetErrorHandler(errorHandler)
 ```
 
-
-### Package
-
-Packaging is done through https://goreleaser.com/ 
-
 ### Testing
 
 Done through unit/integration tests. Otherwise see https://github.com/svent/gitignore-test
