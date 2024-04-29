@@ -38,6 +38,22 @@ func TestNewFileWalker(t *testing.T) {
 	}
 }
 
+func TestNewParallelFileWalker(t *testing.T) {
+	fileListQueue := make(chan *File, 10_000) // NB we set buffered to ensure we get everything
+	curdir, _ := os.Getwd()
+	walker := NewParallelFileWalker([]string{curdir, curdir}, fileListQueue)
+	_ = walker.Start()
+
+	count := 0
+	for range fileListQueue {
+		count++
+	}
+
+	if count == 0 {
+		t.Error("Expected to find at least one file")
+	}
+}
+
 func TestNewFileWalkerStuff(t *testing.T) {
 	fileListQueue := make(chan *File, 10_000) // NB we set buffered to ensure we get everything
 	curdir, _ := os.Getwd()
