@@ -509,7 +509,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 				}
 			}
 
-			if iteration == 1 {
+			if iteration == 0 {
 				wg.Add(1)
 				go func(iteration int, directory string, gitignores []gitignore.GitIgnore, ignores []gitignore.GitIgnore) {
 					_ = f.walkDirectoryRecursive(iteration+1, joined, gitignores, ignores)
