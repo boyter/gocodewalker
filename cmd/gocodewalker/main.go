@@ -17,12 +17,11 @@ import (
 // gocodewalker | sort
 func main() {
 	fileListQueue := make(chan *gocodewalker.File, 10_000)
-	fileWalker := gocodewalker.NewFileWalker(".", fileListQueue)
+	fileWalker := gocodewalker.NewParallelFileWalker([]string{"./cmd/", "./go-gitignore/"}, fileListQueue)
 
 	// handle the errors by printing them out and then ignore
 	errorHandler := func(e error) bool {
 		fmt.Println("ERR", e.Error())
-
 		return true
 	}
 	fileWalker.SetErrorHandler(errorHandler)
