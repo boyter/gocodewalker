@@ -60,6 +60,7 @@ type FileWalker struct {
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
 	countingSemaphore      chan bool
+	semaphoreCount         int
 }
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
@@ -89,6 +90,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 		osOpen:                 os.Open,
 		osReadFile:             os.ReadFile,
 		countingSemaphore:      make(chan bool, semaphoreCount),
+		semaphoreCount:         semaphoreCount,
 	}
 }
 
@@ -119,6 +121,20 @@ func NewParallelFileWalker(directories []string, fileListQueue chan *File) *File
 		osOpen:                 os.Open,
 		osReadFile:             os.ReadFile,
 		countingSemaphore:      make(chan bool, semaphoreCount),
+		semaphoreCount:         semaphoreCount,
+	}
+}
+
+// SetConcurrency sets the concurrency when walking
+// which controls the number of goroutines that
+// walk directories concurrently
+// by default it is set to 8
+// must be a whole integer greater than 0
+func (f *FileWalker) SetConcurrency(i int) {
+	f.walkMutex.Lock()
+	defer f.walkMutex.Unlock()
+	if i > 1 {
+		f.semaphoreCount = i
 	}
 }
 
@@ -157,6 +173,10 @@ func (f *FileWalker) Start() error {
 	f.walkMutex.Lock()
 	f.isWalking = true
 	f.walkMutex.Unlock()
+
+	// we now set the counting semaphore based on the count
+	// done here because it should not change while walking
+	f.countingSemaphore = make(chan bool, semaphoreCount)
 
 	var err error
 	if len(f.directories) != 0 {
