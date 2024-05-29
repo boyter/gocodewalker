@@ -133,7 +133,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan *File) *File
 func (f *FileWalker) SetConcurrency(i int) {
 	f.walkMutex.Lock()
 	defer f.walkMutex.Unlock()
-	if i > 1 {
+	if i >= 1 {
 		f.semaphoreCount = i
 	}
 }
