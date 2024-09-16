@@ -3,6 +3,7 @@
 package gitignore
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -263,6 +264,8 @@ func (i *ignore) MatchIsDir(path string, _isdir bool) Match {
 		matchIsDirCache[path] = _path
 		matchIsDirMutex.Unlock()
 	}
+
+	fmt.Println(path, _path)
 
 	// attempt to match the absolute path
 	return i.Absolute(_path, _isdir)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/boyter/gocodewalker"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -37,10 +38,13 @@ func main() {
 		}
 	}()
 
+	sb := strings.Builder{}
 	count := 0
 	for f := range fileListQueue {
-		fmt.Println(f.Location)
+		//fmt.Println(f.Location)
+		sb.WriteString(f.Location)
+		sb.WriteString("\n")
 		count++
 	}
-	fmt.Println(count)
+	fmt.Println(count, len(sb.String()))
 }

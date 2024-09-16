@@ -3,8 +3,10 @@
 package gitignore_test
 
 import (
+	"fmt"
 	"github.com/boyter/gocodewalker/go-gitignore"
 	"testing"
+	"unicode/utf8"
 
 	"os"
 	"path/filepath"
@@ -335,3 +337,97 @@ func withfile(t *testing.T, test *gitignoretest, content string) {
 		t.Fatalf("expected nil GitIgnore, got %v", _ignore)
 	}
 } // withfile()
+
+func TestStringBackwards(t *testing.T) {
+	a := "../../../scc/CODE_OF_CONDUCT.md"
+	b := "/Users/boyter/Documents/projects/scc/CODE_OF_CONDUCT.md"
+
+	// walk both strings backwards till we find something that does not match
+	fist := findFirstNonMatchingRuneFromEnd(a, b)
+	pre := b[:len(b)-fist]
+
+	fmt.Println(fist, pre)
+	fmt.Println(a, a[len(a)-fist:])
+	fmt.Println(fmt.Sprintf("%s%s", pre, a[len(a)-fist:]))
+	fmt.Println()
+
+	a = "content.json"
+	b = "/Users/boyter/Documents/projects/searchcode-server/content.json"
+
+	fist = findFirstNonMatchingRuneFromEnd(a, b)
+	pre = b[:len(b)-fist]
+
+	fmt.Println(fist, pre)
+	fmt.Println(a, a[len(a)-fist:])
+	fmt.Println(fmt.Sprintf("%s%s", pre, a[len(a)-fist:]))
+}
+
+func TestThing(t *testing.T) {
+	type c struct {
+		a, b string
+	}
+
+	tt := []c{
+		{
+			a: "../../../scc/CODE_OF_CONDUCT.md",
+			b: "/Users/boyter/Documents/projects/scc/CODE_OF_CONDUCT.md",
+		},
+		{
+			a: "../../../scc/performance-over-time.png",
+			b: "/Users/boyter/Documents/projects/scc/performance-over-time.png",
+		},
+		{
+			a: "../../../scc/test-all.sh",
+			b: "/Users/boyter/Documents/projects/scc/test-all.sh",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.a, func(t *testing.T) {
+			fist := findFirstNonMatchingRuneFromEnd(tc.a, tc.b)
+			pre := tc.b[:len(tc.b)-fist]
+			res := fmt.Sprintf("%s%s", pre, tc.a[len(tc.a)-fist:])
+			if tc.b != res {
+				t.Errorf("expected %v got %v", tc.b, res)
+			}
+
+			fmt.Println()
+			fmt.Println(filepath.Abs(tc.a))
+			fmt.Println()
+		})
+	}
+}
+
+func filepathAbs(path string) string {
+	return path
+}
+
+// findFirstNonMatchingRuneFromEnd walks backwards in two strings
+// and returns the rune location where they first start not matching.
+func findFirstNonMatchingRuneFromEnd(s1, s2 string) int {
+	len1 := utf8.RuneCountInString(s1)
+	len2 := utf8.RuneCountInString(s2)
+	i1 := len1 - 1
+	i2 := len2 - 1
+
+	runeIndex := 0
+
+	for i1 >= 0 && i2 >= 0 {
+		r1, size1 := utf8.DecodeLastRuneInString(s1[:i1+1])
+		r2, size2 := utf8.DecodeLastRuneInString(s2[:i2+1])
+
+		if r1 != r2 {
+			return runeIndex
+		}
+
+		i1 -= size1
+		i2 -= size2
+		runeIndex++
+	}
+
+	if i1 >= 0 || i2 >= 0 {
+		return runeIndex
+	}
+
+	return -1 // Strings are identical when traversed from the end
+}
