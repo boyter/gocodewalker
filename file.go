@@ -9,6 +9,7 @@ package gocodewalker
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/boyter/gocodewalker/go-gitignore"
 	"golang.org/x/sync/errgroup"
 	"os"
@@ -20,8 +21,9 @@ import (
 )
 
 const (
-	GitIgnore = ".gitignore"
-	Ignore    = ".ignore"
+	GitIgnore  = ".gitignore"
+	Ignore     = ".ignore"
+	GitModules = ".gitmodules"
 )
 
 // ErrTerminateWalk error which indicates that the walker was terminated
@@ -56,6 +58,7 @@ type FileWalker struct {
 	isWalking              bool
 	IgnoreIgnoreFile       bool // Should .ignore files be respected?
 	IgnoreGitIgnore        bool // Should .gitignore files be respected?
+	IgnoreGitModules       bool // Should .gitmodules files be respected?
 	IncludeHidden          bool // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
@@ -86,6 +89,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 		isWalking:              false,
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
+		IgnoreGitModules:       false,
 		IncludeHidden:          false,
 		osOpen:                 os.Open,
 		osReadFile:             os.ReadFile,
@@ -117,6 +121,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan *File) *File
 		isWalking:              false,
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
+		IgnoreGitModules:       false,
 		IncludeHidden:          false,
 		osOpen:                 os.Open,
 		osReadFile:             os.ReadFile,
@@ -303,6 +308,27 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 
 				gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
 				ignores = append(ignores, gitIgnore)
+			}
+		}
+
+		// this should only happen on the first iteration
+		// because there can only be one .gitmodules file per repository
+		// however we also need to support someone running in a directory of
+		// projects that have multiple repositories or in a go vendor
+		// repository etc...
+		if !f.IgnoreGitModules {
+			if file.Name() == GitModules {
+				// now we need to open and parse the file
+				c, err := f.osReadFile(filepath.Join(directory, file.Name()))
+				if err != nil {
+					if f.errorsHandler(err) {
+						continue // if asked to ignore it lets continue
+					}
+					return err
+				}
+
+				fmt.Println(c)
+				//extractGitModuleFolders()
 			}
 		}
 	}
