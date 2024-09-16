@@ -308,6 +308,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 
 				gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
 				ignores = append(ignores, gitIgnore)
+				fmt.Println(">>>>>>", gitIgnore)
 			}
 		}
 
@@ -327,8 +328,10 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 					return err
 				}
 
-				fmt.Println(c)
-				//extractGitModuleFolders()
+				fmt.Println("//////")
+				fmt.Println(filepath.Join(directory, file.Name()))
+				fmt.Println(extractGitModuleFolders(string(c)))
+				fmt.Println("//////")
 			}
 		}
 	}
