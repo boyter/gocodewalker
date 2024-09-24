@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	GitIgnore = ".gitignore"
-	Ignore    = ".ignore"
+	GitIgnore  = ".gitignore"
+	Ignore     = ".ignore"
+	GitModules = ".gitmodules"
 )
 
 // ErrTerminateWalk error which indicates that the walker was terminated
@@ -56,6 +57,7 @@ type FileWalker struct {
 	isWalking              bool
 	IgnoreIgnoreFile       bool // Should .ignore files be respected?
 	IgnoreGitIgnore        bool // Should .gitignore files be respected?
+	IgnoreGitModules       bool // Should .gitmodules files be respected?
 	IncludeHidden          bool // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
@@ -86,6 +88,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 		isWalking:              false,
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
+		IgnoreGitModules:       false,
 		IncludeHidden:          false,
 		osOpen:                 os.Open,
 		osReadFile:             os.ReadFile,
@@ -117,6 +120,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan *File) *File
 		isWalking:              false,
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
+		IgnoreGitModules:       false,
 		IncludeHidden:          false,
 		osOpen:                 os.Open,
 		osReadFile:             os.ReadFile,
@@ -184,14 +188,14 @@ func (f *FileWalker) Start() error {
 		for _, directory := range f.directories {
 			d := directory // capture var
 			eg.Go(func() error {
-				return f.walkDirectoryRecursive(0, d, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
+				return f.walkDirectoryRecursive(0, d, []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
 			})
 		}
 
 		err = eg.Wait()
 	} else {
 		if f.directory != "" {
-			err = f.walkDirectoryRecursive(0, f.directory, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
+			err = f.walkDirectoryRecursive(0, f.directory, []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
 		}
 	}
 
@@ -204,7 +208,11 @@ func (f *FileWalker) Start() error {
 	return err
 }
 
-func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, gitignores []gitignore.GitIgnore, ignores []gitignore.GitIgnore) error {
+func (f *FileWalker) walkDirectoryRecursive(iteration int,
+	directory string,
+	gitignores []gitignore.GitIgnore,
+	ignores []gitignore.GitIgnore,
+	moduleIgnores []gitignore.GitIgnore) error {
 	if iteration == 1 {
 		f.countingSemaphore <- true
 		defer func() {
@@ -254,7 +262,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 		}
 	}
 
-	// Pull out all ignore and gitignore files and add them
+	// Pull out all ignore, gitignore and gitmodule files and add them
 	// to out collection of gitignores to be applied for this pass
 	// and any subdirectories
 	// Since they can apply to the current list of files we need to ensure
@@ -303,6 +311,37 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 
 				gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
 				ignores = append(ignores, gitIgnore)
+			}
+		}
+
+		// this should only happen on the first iteration
+		// because there should be one .gitmodules file per repository
+		// however we also need to support someone running in a directory of
+		// projects that have multiple repositories or in a go vendor
+		// repository etc... hence check every time
+		if !f.IgnoreGitModules {
+			if file.Name() == GitModules {
+				// now we need to open and parse the file
+				c, err := f.osReadFile(filepath.Join(directory, file.Name()))
+				if err != nil {
+					if f.errorsHandler(err) {
+						continue // if asked to ignore it lets continue
+					}
+					return err
+				}
+
+				abs, err := filepath.Abs(directory)
+				if err != nil {
+					if f.errorsHandler(err) {
+						continue // if asked to ignore it lets continue
+					}
+					return err
+				}
+
+				for _, gm := range extractGitModuleFolders(string(c)) {
+					gitIgnore := gitignore.New(strings.NewReader(gm), abs, nil)
+					moduleIgnores = append(moduleIgnores, gitIgnore)
+				}
 			}
 		}
 	}
@@ -466,6 +505,12 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 				shouldIgnore = ignore.Ignore(joined)
 			}
 		}
+		for _, ignore := range moduleIgnores {
+			// same rules as above
+			if ignore.MatchIsDir(joined, true) != nil {
+				shouldIgnore = ignore.Ignore(joined)
+			}
+		}
 
 		// start by saying we didn't find it then check each possible
 		// choice to see if we did find it
@@ -532,11 +577,11 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int, directory string, git
 			if iteration == 0 {
 				wg.Add(1)
 				go func(iteration int, directory string, gitignores []gitignore.GitIgnore, ignores []gitignore.GitIgnore) {
-					_ = f.walkDirectoryRecursive(iteration+1, joined, gitignores, ignores)
+					_ = f.walkDirectoryRecursive(iteration+1, joined, gitignores, ignores, moduleIgnores)
 					wg.Done()
 				}(iteration, joined, gitignores, ignores)
 			} else {
-				err = f.walkDirectoryRecursive(iteration+1, joined, gitignores, ignores)
+				err = f.walkDirectoryRecursive(iteration+1, joined, gitignores, ignores, moduleIgnores)
 				if err != nil {
 					return err
 				}
