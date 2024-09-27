@@ -9,14 +9,16 @@ package gocodewalker
 import (
 	"bytes"
 	"errors"
-	"github.com/boyter/gocodewalker/go-gitignore"
-	"golang.org/x/sync/errgroup"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -239,7 +241,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	}
 	defer d.Close()
 
-	foundFiles, err := d.Readdir(-1)
+	foundFiles, err := d.ReadDir(-1)
 	if err != nil {
 		// nothing we can do with this so return nil and process as best we can
 		if f.errorsHandler(err) {
@@ -248,8 +250,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		return err
 	}
 
-	files := []os.FileInfo{}
-	dirs := []os.FileInfo{}
+	files := []fs.DirEntry{}
+	dirs := []fs.DirEntry{}
 
 	// We want to break apart the files and directories from the
 	// return as we loop over them differently and this avoids some
@@ -409,7 +411,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 
 		// Ignore hidden files
 		if !f.IncludeHidden {
-			s, err := IsHidden(file, directory)
+			s, err := IsHiddenDirEntry(file, directory)
 			if err != nil {
 				if !f.errorsHandler(err) {
 					return err
@@ -555,7 +557,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 
 		// Ignore hidden directories
 		if !f.IncludeHidden {
-			s, err := IsHidden(dir, directory)
+			s, err := IsHiddenDirEntry(dir, directory)
 			if err != nil {
 				if !f.errorsHandler(err) {
 					return err
