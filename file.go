@@ -133,6 +133,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan *File) *File
 		osReadFile:             os.ReadFile,
 		countingSemaphore:      make(chan bool, semaphoreCount),
 		semaphoreCount:         semaphoreCount,
+		MaxDepth:               -1,
 	}
 }
 
