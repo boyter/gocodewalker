@@ -66,6 +66,7 @@ type FileWalker struct {
 	osReadFile             func(name string) ([]byte, error)
 	countingSemaphore      chan bool
 	semaphoreCount         int
+	MaxDepth               int
 }
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
@@ -98,6 +99,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 		osReadFile:             os.ReadFile,
 		countingSemaphore:      make(chan bool, semaphoreCount),
 		semaphoreCount:         semaphoreCount,
+		MaxDepth:               -1,
 	}
 }
 
@@ -219,6 +221,12 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	ignores []gitignore.GitIgnore,
 	moduleIgnores []gitignore.GitIgnore,
 	customIgnores []gitignore.GitIgnore) error {
+
+	// implement max depth option
+	if f.MaxDepth != -1 && iteration >= f.MaxDepth {
+		return nil
+	}
+
 	if iteration == 1 {
 		f.countingSemaphore <- true
 		defer func() {
