@@ -5,11 +5,12 @@ package gitignore_test
 import (
 	"bytes"
 	"fmt"
-	"github.com/boyter/gocodewalker/go-gitignore"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
 func file(content string) (*os.File, error) {

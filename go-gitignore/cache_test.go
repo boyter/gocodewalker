@@ -3,8 +3,9 @@
 package gitignore_test
 
 import (
-	"github.com/boyter/gocodewalker/go-gitignore"
 	"testing"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
 func TestCache(t *testing.T) {

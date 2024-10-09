@@ -4,8 +4,9 @@ package gitignore_test
 
 import (
 	"fmt"
-	"github.com/boyter/gocodewalker/go-gitignore"
 	"testing"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
 func TestToken(t *testing.T) {

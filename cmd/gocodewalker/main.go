@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/boyter/gocodewalker"
 	"os"
 	"strings"
+
+	"github.com/boyter/gocodewalker"
 )
 
 // Proper test designed to confirm that .gitignores work as expected with globs

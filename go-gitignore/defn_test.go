@@ -3,9 +3,10 @@
 package gitignore_test
 
 import (
-	"github.com/boyter/gocodewalker/go-gitignore"
 	"path/filepath"
 	"strings"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
 type token struct {

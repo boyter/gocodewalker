@@ -3,10 +3,11 @@
 package gitignore_test
 
 import (
-	"github.com/boyter/gocodewalker/go-gitignore"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
 type repositorytest struct {

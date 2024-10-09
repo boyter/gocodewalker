@@ -3,10 +3,11 @@
 package gocodewalker
 
 import (
-	"github.com/boyter/gocodewalker/go-gitignore"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
 func TestGitIgnore(t *testing.T) {

@@ -4,8 +4,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/boyter/gocodewalker"
 	"regexp"
+
+	"github.com/boyter/gocodewalker"
 )
 
 func main() {

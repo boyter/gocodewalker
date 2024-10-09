@@ -4,6 +4,7 @@ package gitignore_test
 
 import (
 	"fmt"
+
 	"github.com/boyter/gocodewalker/go-gitignore"
 )
 
