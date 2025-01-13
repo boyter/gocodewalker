@@ -581,7 +581,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		// things like .git .hg and .svn
 		// Comes after include as it takes precedence
 		for _, deny := range f.ExcludeDirectory {
-			if dir.Name() == deny {
+			if isSuffixDir(joined, deny) {
 				shouldIgnore = true
 			}
 		}
