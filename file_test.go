@@ -510,6 +510,52 @@ func TestNewFileWalkerDirectoryCases(t *testing.T) {
 			Expected: 1,
 		},
 		{
+			Name: "ExcludeDirectory multi-level 1",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+				d3 := filepath.Join(d2, "multi")
+				_ = os.Mkdir(d3, 0777)
+				_, _ = os.Create(filepath.Join(d3, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeDirectory = []string{"stuff/multi"}
+				return walker, fileListQueue
+			},
+			Expected: 1,
+		},
+		{
+			Name: "ExcludeDirectory multi-level 2",
+			Case: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "stuff")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "/test.md"))
+				d3 := filepath.Join(d2, "multi")
+				_ = os.Mkdir(d3, 0777)
+				_, _ = os.Create(filepath.Join(d3, "/test.md"))
+
+				d4 := filepath.Join(d2, "another/stuff/multi")
+				_ = os.MkdirAll(d4, 0777)
+				_, _ = os.Create(filepath.Join(d4, "/test.md"))
+
+				d5 := filepath.Join(d2, "another/sstuff/multi")
+				_ = os.MkdirAll(d5, 0777)
+				_, _ = os.Create(filepath.Join(d5, "/test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+
+				walker.ExcludeDirectory = []string{"stuff/multi"}
+				return walker, fileListQueue
+			},
+			Expected: 2,
+		},
+		{
 			Name: "IncludeDirectory 1",
 			Case: func() (*FileWalker, chan *File) {
 				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
