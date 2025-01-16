@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -417,38 +418,28 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 
 		if len(f.IncludeFilename) != 0 {
 			// include files
-			found := false
-			for _, allow := range f.IncludeFilename {
-				if file.Name() == allow {
-					found = true
-				}
-			}
-			if !found {
-				shouldIgnore = true
-			}
+			shouldIgnore = !slices.ContainsFunc(f.IncludeFilename, func(allow string) bool {
+				return file.Name() == allow
+			})
 		}
 		// Exclude comes after include as it takes precedence
 		for _, deny := range f.ExcludeFilename {
 			if file.Name() == deny {
 				shouldIgnore = true
+				break
 			}
 		}
 
 		if len(f.IncludeFilenameRegex) != 0 {
-			found := false
-			for _, allow := range f.IncludeFilenameRegex {
-				if allow.Match([]byte(file.Name())) {
-					found = true
-				}
-			}
-			if !found {
-				shouldIgnore = true
-			}
+			shouldIgnore = !slices.ContainsFunc(f.IncludeFilenameRegex, func(allow *regexp.Regexp) bool {
+				return allow.MatchString(file.Name())
+			})
 		}
 		// Exclude comes after include as it takes precedence
 		for _, deny := range f.ExcludeFilenameRegex {
-			if deny.Match([]byte(file.Name())) {
+			if deny.MatchString(file.Name()) {
 				shouldIgnore = true
+				break
 			}
 		}
 
@@ -469,47 +460,24 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		// Check against extensions
 		if len(f.AllowListExtensions) != 0 {
 			ext := GetExtension(file.Name())
-
-			a := false
-			for _, v := range f.AllowListExtensions {
-				if v == ext {
-					a = true
-				}
-			}
-
 			// try again because we could have one of those pesky ones such as something.spec.tsx
 			// but only if we didn't already find something to save on a bit of processing
-			if !a {
-				ext = GetExtension(ext)
-				for _, v := range f.AllowListExtensions {
-					if v == ext {
-						a = true
-					}
-				}
-			}
-
-			if !a {
+			if !slices.Contains(f.AllowListExtensions, ext) && !slices.Contains(f.AllowListExtensions, GetExtension(ext)) {
 				shouldIgnore = true
 			}
 		}
 
-		for _, deny := range f.ExcludeListExtensions {
+		if len(f.ExcludeListExtensions) != 0 {
 			ext := GetExtension(file.Name())
-			if ext == deny {
-				shouldIgnore = true
-			}
-
-			if !shouldIgnore {
-				ext = GetExtension(ext)
-				if ext == deny {
-					shouldIgnore = true
-				}
-			}
+			shouldIgnore = slices.ContainsFunc(f.ExcludeListExtensions, func(deny string) bool {
+				return ext == deny || GetExtension(ext) == deny
+			})
 		}
 
 		for _, p := range f.LocationExcludePattern {
 			if strings.Contains(joined, p) {
 				shouldIgnore = true
+				break
 			}
 		}
 
@@ -567,15 +535,9 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		// choice to see if we did find it
 		// if we didn't find it then we should ignore
 		if len(f.IncludeDirectory) != 0 {
-			found := false
-			for _, allow := range f.IncludeDirectory {
-				if dir.Name() == allow {
-					found = true
-				}
-			}
-			if !found {
-				shouldIgnore = true
-			}
+			shouldIgnore = !slices.ContainsFunc(f.IncludeDirectory, func(allow string) bool {
+				return dir.Name() == allow
+			})
 		}
 		// Confirm if there are any files in the path deny list which usually includes
 		// things like .git .hg and .svn
@@ -583,24 +545,20 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		for _, deny := range f.ExcludeDirectory {
 			if isSuffixDir(joined, deny) {
 				shouldIgnore = true
+				break
 			}
 		}
 
 		if len(f.IncludeDirectoryRegex) != 0 {
-			found := false
-			for _, allow := range f.IncludeDirectoryRegex {
-				if allow.Match([]byte(dir.Name())) {
-					found = true
-				}
-			}
-			if !found {
-				shouldIgnore = true
-			}
+			shouldIgnore = !slices.ContainsFunc(f.IncludeDirectoryRegex, func(allow *regexp.Regexp) bool {
+				return allow.MatchString(dir.Name())
+			})
 		}
 		// Exclude comes after include as it takes precedence
 		for _, deny := range f.ExcludeDirectoryRegex {
-			if deny.Match([]byte(dir.Name())) {
+			if deny.MatchString(dir.Name()) {
 				shouldIgnore = true
+				break
 			}
 		}
 
