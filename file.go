@@ -576,13 +576,14 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			}
 		}
 
-		if !shouldIgnore {
-			for _, p := range f.LocationExcludePattern {
-				if strings.Contains(joined, p) {
-					shouldIgnore = true
-				}
+		for _, p := range f.LocationExcludePattern {
+			if strings.Contains(joined, p) {
+				shouldIgnore = true
+				break
 			}
+		}
 
+		if !shouldIgnore {
 			if iteration == 0 {
 				wg.Add(1)
 				go func(iteration int, directory string, gitignores []gitignore.GitIgnore, ignores []gitignore.GitIgnore) {
