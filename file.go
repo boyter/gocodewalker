@@ -40,7 +40,7 @@ type File struct {
 var semaphoreCount = 8
 
 type FileWalker struct {
-	fileListQueue          chan *File
+	fileListQueue          chan<- *File
 	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
 	directory              string
 	directories            []string
@@ -62,6 +62,7 @@ type FileWalker struct {
 	IgnoreGitIgnore        bool     // Should .gitignore files be respected?
 	IgnoreGitModules       bool     // Should .gitmodules files be respected?
 	CustomIgnore           []string // Custom ignore files
+	CustomIgnorePatterns   []string //Custom ignore patterns
 	IncludeHidden          bool     // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
@@ -72,7 +73,7 @@ type FileWalker struct {
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
 // and output File results to the supplied queue as it finds them
-func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
+func NewFileWalker(directory string, fileListQueue chan<- *File) *FileWalker {
 	return &FileWalker{
 		fileListQueue:          fileListQueue,
 		errorsHandler:          func(e error) bool { return true }, // a generic one that just swallows everything
@@ -94,6 +95,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
 		CustomIgnore:           []string{},
+		CustomIgnorePatterns:   []string{},
 		IgnoreGitModules:       false,
 		IncludeHidden:          false,
 		osOpen:                 os.Open,
@@ -106,7 +108,7 @@ func NewFileWalker(directory string, fileListQueue chan *File) *FileWalker {
 
 // NewParallelFileWalker constructs a filewalker, which will walk the supplied directories in parallel
 // and output File results to the supplied queue as it finds them
-func NewParallelFileWalker(directories []string, fileListQueue chan *File) *FileWalker {
+func NewParallelFileWalker(directories []string, fileListQueue chan<- *File) *FileWalker {
 	return &FileWalker{
 		fileListQueue:          fileListQueue,
 		errorsHandler:          func(e error) bool { return true }, // a generic one that just swallows everything
@@ -128,6 +130,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan *File) *File
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
 		CustomIgnore:           []string{},
+		CustomIgnorePatterns:   []string{},
 		IgnoreGitModules:       false,
 		IncludeHidden:          false,
 		osOpen:                 os.Open,
@@ -383,6 +386,13 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				customIgnores = append(customIgnores, gitIgnore)
 			}
 		}
+	}
+
+	// If we have custom ignore patterns defined we should concatenate them and treat them as a single gitignore file
+	if len(f.CustomIgnorePatterns) > 0 {
+		customIgnorePatternsCombined := strings.Join(f.CustomIgnorePatterns, "\n")
+		gitIgnore := gitignore.New(bytes.NewReader([]byte(customIgnorePatternsCombined)), directory, nil)
+		customIgnores = append(customIgnores, gitIgnore)
 	}
 
 	// Process files first to start feeding whatever process is consuming
