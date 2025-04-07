@@ -61,7 +61,7 @@ type FileWalker struct {
 	IgnoreIgnoreFile       bool     // Should .ignore files be respected?
 	IgnoreGitIgnore        bool     // Should .gitignore files be respected?
 	IgnoreGitModules       bool     // Should .gitmodules files be respected?
-	CustomIgnoreFiles      []string // Custom ignore files
+	CustomIgnore           []string // Custom ignore files
 	CustomIgnorePatterns   []string //Custom ignore patterns
 	IncludeHidden          bool     // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
@@ -94,7 +94,7 @@ func NewFileWalker(directory string, fileListQueue chan<- *File) *FileWalker {
 		isWalking:              false,
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
-		CustomIgnoreFiles:      []string{},
+		CustomIgnore:           []string{},
 		CustomIgnorePatterns:   []string{},
 		IgnoreGitModules:       false,
 		IncludeHidden:          false,
@@ -129,7 +129,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan<- *File) *Fi
 		isWalking:              false,
 		IgnoreIgnoreFile:       false,
 		IgnoreGitIgnore:        false,
-		CustomIgnoreFiles:      []string{},
+		CustomIgnore:           []string{},
 		CustomIgnorePatterns:   []string{},
 		IgnoreGitModules:       false,
 		IncludeHidden:          false,
@@ -364,7 +364,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			}
 		}
 
-		for _, ci := range f.CustomIgnoreFiles {
+		for _, ci := range f.CustomIgnore {
 			if file.Name() == ci {
 				c, err := f.osReadFile(filepath.Join(directory, file.Name()))
 				if err != nil {
