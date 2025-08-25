@@ -76,16 +76,22 @@ func (r *repositorytest) destroy() {
 	// remove the temporary files and directories
 	for _, _path := range []string{r.directory, r.exclude} {
 		if _path != "" {
-			defer os.RemoveAll(_path)
+			defer func(path string) {
+				_ = os.RemoveAll(path)
+			}(_path)
 		}
 	}
 
 	if r.file == gitignore.File || r.file == "" {
 		// reset the GIT_DIR environment variable
 		if r.gitdir == "" {
-			defer os.Unsetenv("GIT_DIR")
+			defer func() {
+				_ = os.Unsetenv("GIT_DIR")
+			}()
 		} else {
-			defer os.Setenv("GIT_DIR", r.gitdir)
+			defer func(key, value string) {
+				_ = os.Setenv(key, value)
+			}("GIT_DIR", r.gitdir)
 		}
 	}
 } // destroy()
@@ -389,7 +395,9 @@ func repository(t *testing.T, test *repositorytest, m []match) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary directory: %s", _err.Error())
 	}
-	defer os.RemoveAll(_new)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_new)
 
 	// first, perform Match() tests
 	_repository, _err = test.create(test.directory, true)
@@ -450,7 +458,7 @@ func repository(t *testing.T, test *repositorytest, m []match) {
 		// were we recording errors?
 		if test.error != nil {
 			_after := len(test.errors)
-			if !(_after > _before) {
+			if _after <= _before {
 				t.Fatalf(
 					"expected Match() error; none found for %s",
 					_path,
@@ -477,7 +485,9 @@ func repository(t *testing.T, test *repositorytest, m []match) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary directory: %s", _err.Error())
 	}
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	_cwd, _err := os.Getwd()
 	if _err != nil {
@@ -541,19 +551,21 @@ func invalid(t *testing.T, test *repositorytest) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary file: %s", _err.Error())
 	}
-	defer os.Remove(_file.Name())
+	defer func(name string) {
+		_ = os.Remove(name)
+	}(_file.Name())
 
 	// test repository instance creation against a file
 	_repository, _err := test.create(_file.Name(), false)
 	if _err == nil {
 		t.Errorf(
 			"invalid repository error; expected %q, got nil",
-			gitignore.InvalidDirectoryError.Error(),
+			gitignore.ErrInvalidDirectoryError.Error(),
 		)
-	} else if _err != gitignore.InvalidDirectoryError {
+	} else if _err != gitignore.ErrInvalidDirectoryError {
 		t.Errorf(
 			"invalid repository mismatch; expected %q, got %q",
-			gitignore.InvalidDirectoryError.Error(), _err.Error(),
+			gitignore.ErrInvalidDirectoryError.Error(), _err.Error(),
 		)
 	}
 
@@ -579,7 +591,7 @@ func invalid(t *testing.T, test *repositorytest) {
 	if _err == nil {
 		t.Errorf(
 			"invalid repository error; expected %q, got nil",
-			gitignore.InvalidDirectoryError.Error(),
+			gitignore.ErrInvalidDirectoryError.Error(),
 		)
 	} else if !os.IsNotExist(_err) {
 		t.Errorf(
@@ -606,7 +618,9 @@ func invalid(t *testing.T, test *repositorytest) {
 	if _err != nil {
 		t.Fatalf("unable to create a temporary directory: %s", _err.Error())
 	}
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	// now change the working directory
 	_cwd, _err := os.Getwd()
@@ -649,7 +663,9 @@ func invalid(t *testing.T, test *repositorytest) {
 	if _err != nil {
 		t.Fatalf("unable to create a temporary directory: %s", _err.Error())
 	}
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	_git := filepath.Join(_dir, gitignore.File)
 	_err = os.Chmod(_git, 0)

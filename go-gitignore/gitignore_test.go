@@ -127,7 +127,9 @@ func TestNewWithCache(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary .gitignore: %s", _err.Error())
 	}
-	defer os.Remove(_file.Name())
+	defer func(name string) {
+		_ = os.Remove(name)
+	}(_file.Name())
 
 	// attempt to load the .gitignore file
 	_ignore, _err := _test.instance(_file.Name())
@@ -136,7 +138,11 @@ func TestNewWithCache(t *testing.T) {
 	}
 
 	// remove the .gitignore and try again
-	os.Remove(_file.Name())
+	err := os.Remove(_file.Name())
+	if err != nil {
+		t.Fatalf("unable to remove temporary .gitignore: %s", _err.Error())
+		return
+	}
 
 	// ensure the retrieved GitIgnore matches the stored instance
 	_new, _err := _test.instance(_file.Name())
@@ -158,7 +164,9 @@ func TestNew(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary .gitignore: %s", _err.Error())
 	}
-	defer os.Remove(_file.Name())
+	defer func(name string) {
+		_ = os.Remove(name)
+	}(_file.Name())
 
 	// ensure we can run NewGitIgnore()
 	//		- ensure we encounter the expected errors
@@ -212,7 +220,9 @@ func withfile(t *testing.T, test *gitignoretest, content string) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary .gitignore: %s", _err.Error())
 	}
-	defer os.Remove(_file.Name())
+	defer func(name string) {
+		_ = os.Remove(name)
+	}(_file.Name())
 
 	// attempt to retrieve the GitIgnore instance
 	_ignore, _err := test.instance(_file.Name())
@@ -301,7 +311,9 @@ func withfile(t *testing.T, test *gitignoretest, content string) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary directory: %s", _err.Error())
 	}
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	// change into the temporary directory
 	_cwd, _err := os.Getwd()

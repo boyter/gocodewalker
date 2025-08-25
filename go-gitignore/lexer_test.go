@@ -47,14 +47,14 @@ func TestLexerInvalidNewLine(t *testing.T) {
 	// perform the Lexer test with invalid input separated by "\n"
 	//		- the source content is manually constructed with "\n" as EOL
 	_content := strings.Split(_GITINVALID, "\n")
-	lexer(t, _content, "\n", _TOKENSINVALID, gitignore.CarriageReturnError)
+	lexer(t, _content, "\n", _TOKENSINVALID, gitignore.ErrCarriageReturnError)
 } // TestLexerInvalidNewLine()
 
 func TestLexerInvalidCarriageReturn(t *testing.T) {
 	// perform the Lexer test with invalid input separated by "\n"
 	//		- the source content is manually constructed with "\n" as EOL
 	_content := strings.Split(_GITINVALID, "\n")
-	lexer(t, _content, "\r\n", _TOKENSINVALID, gitignore.CarriageReturnError)
+	lexer(t, _content, "\r\n", _TOKENSINVALID, gitignore.ErrCarriageReturnError)
 } // TestLexerInvalidCarriageReturn()
 
 func lexer(t *testing.T, lines []string, eol string, tokens []token, e error) {

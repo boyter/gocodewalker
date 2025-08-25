@@ -635,15 +635,15 @@ hidden/
 	// define the patterns & errors expected during invalid content parsing
 	_GITINVALIDPATTERN = []string{"/my/valid/pattern"}
 	_GITINVALIDERROR   = []error{
-		gitignore.CarriageReturnError,
-		gitignore.CarriageReturnError,
-		gitignore.CarriageReturnError,
-		gitignore.CarriageReturnError,
-		gitignore.CarriageReturnError,
-		gitignore.CarriageReturnError,
-		gitignore.CarriageReturnError,
-		gitignore.InvalidPatternError,
-		gitignore.InvalidPatternError,
-		gitignore.CarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrCarriageReturnError,
+		gitignore.ErrInvalidPatternError,
+		gitignore.ErrInvalidPatternError,
+		gitignore.ErrCarriageReturnError,
 	}
 )

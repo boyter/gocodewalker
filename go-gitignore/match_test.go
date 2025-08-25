@@ -15,7 +15,9 @@ func TestMatch(t *testing.T) {
 	//		- this is to permit GitIgnore.Match() to correctly resolve
 	//		  absolute path names
 	_dir, _ignore := directory(t)
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	// perform the path matching
 	//		- first we test absolute paths
@@ -50,7 +52,9 @@ func TestMatch(t *testing.T) {
 	// perform absolute path tests with paths not under the same root
 	// directory as the GitIgnore we are testing
 	_new, _ := directory(t)
-	defer os.RemoveAll(_new)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_new)
 
 	for _, _test := range _GITMATCHES {
 		_path := filepath.Join(_new, _test.Local())
@@ -68,7 +72,9 @@ func TestMatch(t *testing.T) {
 	if _err != nil {
 		t.Fatalf("unable to create temporary directory: %s", _err.Error())
 	}
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	_err = os.Chdir(_dir)
 	if _err != nil {
@@ -99,7 +105,9 @@ func TestIgnore(t *testing.T) {
 	//		- this is to permit GitIgnore.Ignore() to correctly resolve
 	//		  absolute path names
 	_dir, _ignore := directory(t)
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	// perform the path matching
 	//		- first we test absolute paths
@@ -140,7 +148,9 @@ func TestIgnore(t *testing.T) {
 	// perform absolute path tests with paths not under the same root
 	// directory as the GitIgnore we are testing
 	_new, _ := directory(t)
-	defer os.RemoveAll(_new)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_new)
 
 	for _, _test := range _GITMATCHES {
 		_path := filepath.Join(_new, _test.Local())
@@ -156,7 +166,9 @@ func TestInclude(t *testing.T) {
 	//		- this is to permit GitIgnore.Include() to correctly resolve
 	//		  absolute path names
 	_dir, _ignore := directory(t)
-	defer os.RemoveAll(_dir)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_dir)
 
 	// perform the path matching
 	//		- first we test absolute paths
@@ -197,7 +209,9 @@ func TestInclude(t *testing.T) {
 	// perform absolute path tests with paths not under the same root
 	// directory as the GitIgnore we are testing
 	_new, _ := directory(t)
-	defer os.RemoveAll(_new)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_new)
 
 	for _, _test := range _GITMATCHES {
 		_path := filepath.Join(_new, _test.Local())
@@ -249,7 +263,9 @@ func TestMatchAbsolute(t *testing.T) {
 	// perform absolute path tests with paths not under the same root
 	// directory as the GitIgnore we are testing
 	_new, _ := directory(t)
-	defer os.RemoveAll(_new)
+	defer func(path string) {
+		_ = os.RemoveAll(path)
+	}(_new)
 
 	for _, _test := range _GITMATCHES {
 		_path := filepath.Join(_new, _test.Local())

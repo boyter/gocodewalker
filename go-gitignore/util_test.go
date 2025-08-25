@@ -23,12 +23,16 @@ func file(content string) (*os.File, error) {
 	// populate this file with the example .gitignore
 	_, _err = _file.WriteString(content)
 	if _err != nil {
-		defer os.Remove(_file.Name())
+		defer func(name string) {
+			_ = os.Remove(name)
+		}(_file.Name())
 		return nil, _err
 	}
 	_, _err = _file.Seek(0, io.SeekStart)
 	if _err != nil {
-		defer os.Remove(_file.Name())
+		defer func(name string) {
+			_ = os.Remove(name)
+		}(_file.Name())
 		return nil, _err
 	}
 
@@ -48,7 +52,9 @@ func dir(content map[string]string) (string, error) {
 	//		  that is a symbolic link
 	_dir, _err = filepath.EvalSymlinks(_dir)
 	if _err != nil {
-		defer os.RemoveAll(_dir)
+		defer func(path string) {
+			_ = os.RemoveAll(path)
+		}(_dir)
 		return "", _err
 	}
 
@@ -84,7 +90,9 @@ func dir(content map[string]string) (string, error) {
 		// ensure this directory exists
 		_err = os.MkdirAll(_abs, _GITMASK)
 		if _err != nil {
-			defer os.RemoveAll(_dir)
+			defer func(path string) {
+				_ = os.RemoveAll(path)
+			}(_dir)
 			return "", _err
 		} else if _isdir {
 			continue
@@ -96,17 +104,23 @@ func dir(content map[string]string) (string, error) {
 		// write the contents to this file
 		_file, _err := os.Create(_abs)
 		if _err != nil {
-			defer os.RemoveAll(_dir)
+			defer func(path string) {
+				_ = os.RemoveAll(path)
+			}(_dir)
 			return "", _err
 		}
 		_, _err = _file.WriteString(_content)
 		if _err != nil {
-			defer os.RemoveAll(_dir)
+			defer func(path string) {
+				_ = os.RemoveAll(path)
+			}(_dir)
 			return "", _err
 		}
 		_err = _file.Close()
 		if _err != nil {
-			defer os.RemoveAll(_dir)
+			defer func(path string) {
+				_ = os.RemoveAll(path)
+			}(_dir)
 			return "", _err
 		}
 	}
@@ -124,7 +138,9 @@ func exclude(content string) (string, error) {
 	_info := filepath.Join(_dir, "info")
 	_err = os.MkdirAll(_info, _GITMASK)
 	if _err != nil {
-		defer os.RemoveAll(_dir)
+		defer func(path string) {
+			_ = os.RemoveAll(path)
+		}(_dir)
 		return "", _err
 	}
 
@@ -132,7 +148,9 @@ func exclude(content string) (string, error) {
 	_exclude := filepath.Join(_info, "exclude")
 	_err = os.WriteFile(_exclude, []byte(content), _GITMASK)
 	if _err != nil {
-		defer os.RemoveAll(_dir)
+		defer func(path string) {
+			_ = os.RemoveAll(path)
+		}(_dir)
 		return "", _err
 	}
 

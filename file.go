@@ -256,7 +256,12 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		}
 		return err
 	}
-	defer d.Close()
+	defer func(d *os.File) {
+		err := d.Close()
+		if err != nil {
+			f.errorsHandler(err)
+		}
+	}(d)
 
 	foundFiles, err := d.ReadDir(-1)
 	if err != nil {
