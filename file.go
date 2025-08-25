@@ -9,6 +9,7 @@ package gocodewalker
 import (
 	"bytes"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -23,9 +24,10 @@ import (
 )
 
 const (
-	GitIgnore  = ".gitignore"
-	Ignore     = ".ignore"
-	GitModules = ".gitmodules"
+	GitIgnore             = ".gitignore"
+	Ignore                = ".ignore"
+	GitModules            = ".gitmodules"
+	IgnoreBinaryFileBytes = 1000
 )
 
 // ErrTerminateWalk error which indicates that the walker was terminated
@@ -69,6 +71,8 @@ type FileWalker struct {
 	countingSemaphore      chan bool
 	semaphoreCount         int
 	MaxDepth               int
+	IgnoreBinaryFiles      bool // Should we open the file and try to determine if it is binary?
+	IgnoreBinaryFileBytes  int  // How many bytes should be used
 }
 
 // NewFileWalker constructs a filewalker, which will walk the supplied directory
@@ -103,6 +107,8 @@ func NewFileWalker(directory string, fileListQueue chan<- *File) *FileWalker {
 		countingSemaphore:      make(chan bool, semaphoreCount),
 		semaphoreCount:         semaphoreCount,
 		MaxDepth:               -1,
+		IgnoreBinaryFiles:      false,
+		IgnoreBinaryFileBytes:  IgnoreBinaryFileBytes,
 	}
 }
 
@@ -138,6 +144,8 @@ func NewParallelFileWalker(directories []string, fileListQueue chan<- *File) *Fi
 		countingSemaphore:      make(chan bool, semaphoreCount),
 		semaphoreCount:         semaphoreCount,
 		MaxDepth:               -1,
+		IgnoreBinaryFiles:      false,
+		IgnoreBinaryFileBytes:  IgnoreBinaryFileBytes,
 	}
 }
 
@@ -493,6 +501,38 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			if strings.Contains(joined, p) {
 				shouldIgnore = true
 				break
+			}
+		}
+
+		if f.IgnoreBinaryFiles {
+			fi, err := os.Open(file.Name())
+			if err != nil {
+				if !f.errorsHandler(err) {
+					return err
+				}
+			}
+			defer func(fi *os.File) {
+				_ = fi.Close()
+			}(fi)
+
+			buffer := make([]byte, f.IgnoreBinaryFileBytes)
+
+			// Read up to buffer size
+			_, err = io.ReadFull(fi, buffer)
+			if err != nil && err != io.EOF && !errors.Is(err, io.ErrUnexpectedEOF) {
+				if !f.errorsHandler(err) {
+					return err
+				}
+			}
+
+			// cheaply check if is binary file by checking for null byte.
+			// note that this could be improved later on by checking for magic numbers and the like
+			// but that should probably be its own package
+			for _, b := range buffer {
+				if b == 0 {
+					shouldIgnore = true
+					break
+				}
 			}
 		}
 
