@@ -505,7 +505,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		}
 
 		if f.IgnoreBinaryFiles {
-			fi, err := os.Open(file.Name())
+			fi, err := os.Open(filepath.Join(directory, file.Name()))
 			if err != nil {
 				if !f.errorsHandler(err) {
 					return err
