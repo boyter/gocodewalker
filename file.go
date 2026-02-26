@@ -33,6 +33,29 @@ const (
 // ErrTerminateWalk error which indicates that the walker was terminated
 var ErrTerminateWalk = errors.New("gocodewalker terminated")
 
+// SkipReason indicates why a file or directory was skipped during walking
+type SkipReason string
+
+const (
+	SkipReasonGitignore              SkipReason = "gitignore"
+	SkipReasonIgnoreFile             SkipReason = "ignore_file"
+	SkipReasonCustomIgnore           SkipReason = "custom_ignore"
+	SkipReasonModuleIgnore           SkipReason = "module_ignore"
+	SkipReasonIncludeFilename        SkipReason = "include_filename"
+	SkipReasonExcludeFilename        SkipReason = "exclude_filename"
+	SkipReasonIncludeFilenameRegex   SkipReason = "include_filename_regex"
+	SkipReasonExcludeFilenameRegex   SkipReason = "exclude_filename_regex"
+	SkipReasonHidden                 SkipReason = "hidden"
+	SkipReasonAllowListExtension     SkipReason = "allow_list_extension"
+	SkipReasonExcludeListExtension   SkipReason = "exclude_list_extension"
+	SkipReasonLocationExcludePattern SkipReason = "location_exclude_pattern"
+	SkipReasonBinary                 SkipReason = "binary"
+	SkipReasonIncludeDirectory       SkipReason = "include_directory"
+	SkipReasonExcludeDirectory       SkipReason = "exclude_directory"
+	SkipReasonIncludeDirectoryRegex  SkipReason = "include_directory_regex"
+	SkipReasonExcludeDirectoryRegex  SkipReason = "exclude_directory_regex"
+)
+
 // File is a struct returned which contains the location and the filename of the file that passed all exclusion rules
 type File struct {
 	Location string
@@ -44,6 +67,7 @@ var semaphoreCount = 8
 type FileWalker struct {
 	fileListQueue          chan<- *File
 	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
+	skipHandler            func(path string, name string, isDir bool, reason SkipReason)
 	directory              string
 	directories            []string
 	LocationExcludePattern []string // Case-sensitive patterns which exclude directory/file matches
@@ -81,6 +105,7 @@ func NewFileWalker(directory string, fileListQueue chan<- *File) *FileWalker {
 	return &FileWalker{
 		fileListQueue:          fileListQueue,
 		errorsHandler:          func(e error) bool { return true }, // a generic one that just swallows everything
+		skipHandler:            func(path string, name string, isDir bool, reason SkipReason) {},
 		directory:              directory,
 		LocationExcludePattern: nil,
 		IncludeDirectory:       nil,
@@ -118,6 +143,7 @@ func NewParallelFileWalker(directories []string, fileListQueue chan<- *File) *Fi
 	return &FileWalker{
 		fileListQueue:          fileListQueue,
 		errorsHandler:          func(e error) bool { return true }, // a generic one that just swallows everything
+		skipHandler:            func(path string, name string, isDir bool, reason SkipReason) {},
 		directories:            directories,
 		LocationExcludePattern: nil,
 		IncludeDirectory:       nil,
@@ -186,6 +212,15 @@ func (f *FileWalker) Terminate() {
 func (f *FileWalker) SetErrorHandler(errors func(error) bool) {
 	if errors != nil {
 		f.errorsHandler = errors
+	}
+}
+
+// SetSkipHandler sets the function that is called whenever a file or directory is skipped
+// by the filter pipeline. The handler receives the full path, the entry name, whether it is
+// a directory, and the reason it was skipped. By default it is a no-op.
+func (f *FileWalker) SetSkipHandler(handler func(path string, name string, isDir bool, reason SkipReason)) {
+	if handler != nil {
+		f.skipHandler = handler
 	}
 }
 
@@ -420,6 +455,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	// the output before traversing into directories for more files
 	for _, file := range files {
 		shouldIgnore := false
+		var skipReason SkipReason
 		joined := filepath.Join(directory, file.Name())
 
 		for _, ignore := range gitignores {
@@ -430,6 +466,9 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			// for #2 this means the last one wins since it should be the most correct
 			if ignore.MatchIsDir(joined, false) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonGitignore
+				}
 			}
 		}
 
@@ -437,6 +476,9 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			// same rules as above
 			if ignore.MatchIsDir(joined, false) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonIgnoreFile
+				}
 			}
 		}
 
@@ -444,6 +486,9 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			// same rules as above
 			if ignore.MatchIsDir(joined, false) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonCustomIgnore
+				}
 			}
 		}
 
@@ -452,11 +497,15 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			shouldIgnore = !slices.ContainsFunc(f.IncludeFilename, func(allow string) bool {
 				return file.Name() == allow
 			})
+			if shouldIgnore {
+				skipReason = SkipReasonIncludeFilename
+			}
 		}
 		// Exclude comes after include as it takes precedence
 		for _, deny := range f.ExcludeFilename {
 			if file.Name() == deny {
 				shouldIgnore = true
+				skipReason = SkipReasonExcludeFilename
 				break
 			}
 		}
@@ -465,11 +514,15 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			shouldIgnore = !slices.ContainsFunc(f.IncludeFilenameRegex, func(allow *regexp.Regexp) bool {
 				return allow.MatchString(file.Name())
 			})
+			if shouldIgnore {
+				skipReason = SkipReasonIncludeFilenameRegex
+			}
 		}
 		// Exclude comes after include as it takes precedence
 		for _, deny := range f.ExcludeFilenameRegex {
 			if deny.MatchString(file.Name()) {
 				shouldIgnore = true
+				skipReason = SkipReasonExcludeFilenameRegex
 				break
 			}
 		}
@@ -485,6 +538,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 
 			if s {
 				shouldIgnore = true
+				skipReason = SkipReasonHidden
 			}
 		}
 
@@ -495,6 +549,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			// but only if we didn't already find something to save on a bit of processing
 			if !slices.Contains(f.AllowListExtensions, ext) && !slices.Contains(f.AllowListExtensions, GetExtension(ext)) {
 				shouldIgnore = true
+				skipReason = SkipReasonAllowListExtension
 			}
 		}
 
@@ -503,11 +558,15 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			shouldIgnore = slices.ContainsFunc(f.ExcludeListExtensions, func(deny string) bool {
 				return ext == deny || GetExtension(ext) == deny
 			})
+			if shouldIgnore {
+				skipReason = SkipReasonExcludeListExtension
+			}
 		}
 
 		for _, p := range f.LocationExcludePattern {
 			if strings.Contains(joined, p) {
 				shouldIgnore = true
+				skipReason = SkipReasonLocationExcludePattern
 				break
 			}
 		}
@@ -539,12 +598,15 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			for _, b := range buffer {
 				if b == 0 {
 					shouldIgnore = true
+					skipReason = SkipReasonBinary
 					break
 				}
 			}
 		}
 
-		if !shouldIgnore {
+		if shouldIgnore {
+			f.skipHandler(joined, file.Name(), false, skipReason)
+		} else {
 			f.fileListQueue <- &File{
 				Location: joined,
 				Filename: file.Name(),
@@ -559,6 +621,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	// channel some files to process
 	for _, dir := range dirs {
 		var shouldIgnore bool
+		var skipReason SkipReason
 		joined := filepath.Join(directory, dir.Name())
 
 		// Check against the ignore files we have if the file we are looking at
@@ -573,24 +636,36 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			// for #2 this means the last one wins since it should be the most correct
 			if ignore.MatchIsDir(joined, true) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonGitignore
+				}
 			}
 		}
 		for _, ignore := range ignores {
 			// same rules as above
 			if ignore.MatchIsDir(joined, true) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonIgnoreFile
+				}
 			}
 		}
 		for _, ignore := range customIgnores {
 			// same rules as above
 			if ignore.MatchIsDir(joined, true) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonCustomIgnore
+				}
 			}
 		}
 		for _, ignore := range moduleIgnores {
 			// same rules as above
 			if ignore.MatchIsDir(joined, true) != nil {
 				shouldIgnore = ignore.Ignore(joined)
+				if shouldIgnore {
+					skipReason = SkipReasonModuleIgnore
+				}
 			}
 		}
 
@@ -601,6 +676,9 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			shouldIgnore = !slices.ContainsFunc(f.IncludeDirectory, func(allow string) bool {
 				return dir.Name() == allow
 			})
+			if shouldIgnore {
+				skipReason = SkipReasonIncludeDirectory
+			}
 		}
 		// Confirm if there are any files in the path deny list which usually includes
 		// things like .git .hg and .svn
@@ -608,6 +686,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		for _, deny := range f.ExcludeDirectory {
 			if isSuffixDir(joined, deny) {
 				shouldIgnore = true
+				skipReason = SkipReasonExcludeDirectory
 				break
 			}
 		}
@@ -616,11 +695,15 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			shouldIgnore = !slices.ContainsFunc(f.IncludeDirectoryRegex, func(allow *regexp.Regexp) bool {
 				return allow.MatchString(dir.Name())
 			})
+			if shouldIgnore {
+				skipReason = SkipReasonIncludeDirectoryRegex
+			}
 		}
 		// Exclude comes after include as it takes precedence
 		for _, deny := range f.ExcludeDirectoryRegex {
 			if deny.MatchString(dir.Name()) {
 				shouldIgnore = true
+				skipReason = SkipReasonExcludeDirectoryRegex
 				break
 			}
 		}
@@ -636,14 +719,20 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 
 			if s {
 				shouldIgnore = true
+				skipReason = SkipReasonHidden
 			}
 		}
 
 		for _, p := range f.LocationExcludePattern {
 			if strings.Contains(joined, p) {
 				shouldIgnore = true
+				skipReason = SkipReasonLocationExcludePattern
 				break
 			}
+		}
+
+		if shouldIgnore {
+			f.skipHandler(joined, dir.Name(), true, skipReason)
 		}
 
 		if !shouldIgnore {

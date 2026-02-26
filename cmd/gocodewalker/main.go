@@ -18,7 +18,7 @@ import (
 // gocodewalker | sort
 func main() {
 	fileListQueue := make(chan *gocodewalker.File, 10_000)
-	fileWalker := gocodewalker.NewParallelFileWalker([]string{"./cmd/", "./go-gitignore/"}, fileListQueue)
+	fileWalker := gocodewalker.NewParallelFileWalker([]string{"."}, fileListQueue)
 
 	// handle the errors by printing them out and then ignore
 	errorHandler := func(e error) bool {
@@ -26,6 +26,12 @@ func main() {
 		return true
 	}
 	fileWalker.SetErrorHandler(errorHandler)
+
+	// skipHandler
+	skipHandler := func(path string, name string, isDir bool, reason gocodewalker.SkipReason) {
+		fmt.Println("SKIPPED", path, name, isDir, reason)
+	}
+	fileWalker.SetSkipHandler(skipHandler)
 
 	go func() {
 		err := fileWalker.Start()

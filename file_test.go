@@ -895,3 +895,372 @@ func TestGetExtensionRegression(t *testing.T) {
 		t.Errorf("Expected %s got %s", expected, got)
 	}
 }
+
+func TestSkipHandlerDefaultNoOp(t *testing.T) {
+	d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+	_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+	fileListQueue := make(chan *File, 10)
+	walker := NewFileWalker(d, fileListQueue)
+	walker.ExcludeFilename = []string{"test.txt"}
+	// no SetSkipHandler call — default no-op should work fine
+	_ = walker.Start()
+
+	count := 0
+	for range fileListQueue {
+		count++
+	}
+
+	if count != 0 {
+		t.Error("Expected 0 files")
+	}
+}
+
+func TestSkipHandlerDefaultNoOpParallel(t *testing.T) {
+	d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+	_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+	fileListQueue := make(chan *File, 10)
+	walker := NewParallelFileWalker([]string{d}, fileListQueue)
+	walker.ExcludeFilename = []string{"test.txt"}
+	_ = walker.Start()
+
+	count := 0
+	for range fileListQueue {
+		count++
+	}
+
+	if count != 0 {
+		t.Error("Expected 0 files")
+	}
+}
+
+func TestSkipHandlerFileCases(t *testing.T) {
+	type skipRecord struct {
+		path   string
+		name   string
+		isDir  bool
+		reason SkipReason
+	}
+
+	type testcase struct {
+		Name           string
+		Setup          func() (*FileWalker, chan *File)
+		ExpectedSkips  int
+		ExpectedReason SkipReason
+		ExpectedIsDir  bool
+	}
+
+	testCases := []testcase{
+		{
+			Name: "ExcludeFilename skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "excluded.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.ExcludeFilename = []string{"excluded.txt"}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonExcludeFilename,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "IncludeFilename skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "other.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.IncludeFilename = []string{"wanted.txt"}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonIncludeFilename,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "ExcludeFilenameRegex skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.log"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.ExcludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(`\.log$`)}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonExcludeFilenameRegex,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "IncludeFilenameRegex skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.IncludeFilenameRegex = []*regexp.Regexp{regexp.MustCompile(`\.go$`)}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonIncludeFilenameRegex,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "AllowListExtension skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.AllowListExtensions = []string{"go"}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonAllowListExtension,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "ExcludeListExtension skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.ExcludeListExtensions = []string{"txt"}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonExcludeListExtension,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "LocationExcludePattern file skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.LocationExcludePattern = []string{"test.txt"}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonLocationExcludePattern,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "Binary file skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_ = os.WriteFile(filepath.Join(d, "binary.bin"), []byte{0}, 0644)
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.IgnoreBinaryFiles = true
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonBinary,
+			ExpectedIsDir:  false,
+		},
+		{
+			Name: "CustomIgnorePatterns file skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				_, _ = os.Create(filepath.Join(d, "test.md"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.CustomIgnorePatterns = []string{"*.md"}
+				return walker, fileListQueue
+			},
+			ExpectedSkips:  1,
+			ExpectedReason: SkipReasonCustomIgnore,
+			ExpectedIsDir:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			walker, fileListQueue := tc.Setup()
+
+			var skips []skipRecord
+			walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+				skips = append(skips, skipRecord{path: path, name: name, isDir: isDir, reason: reason})
+			})
+			walker.osReadFile = func(name string) ([]byte, error) { return nil, nil }
+			_ = walker.Start()
+
+			// drain channel
+			for range fileListQueue {
+			}
+
+			if len(skips) != tc.ExpectedSkips {
+				t.Errorf("expected %d skips but got %d", tc.ExpectedSkips, len(skips))
+				return
+			}
+
+			if len(skips) > 0 {
+				if skips[0].reason != tc.ExpectedReason {
+					t.Errorf("expected reason %q but got %q", tc.ExpectedReason, skips[0].reason)
+				}
+				if skips[0].isDir != tc.ExpectedIsDir {
+					t.Errorf("expected isDir=%v but got isDir=%v", tc.ExpectedIsDir, skips[0].isDir)
+				}
+			}
+		})
+	}
+}
+
+func TestSkipHandlerDirectoryCases(t *testing.T) {
+	type skipRecord struct {
+		path   string
+		name   string
+		isDir  bool
+		reason SkipReason
+	}
+
+	type testcase struct {
+		Name           string
+		Setup          func() (*FileWalker, chan *File)
+		ExpectedReason SkipReason
+	}
+
+	testCases := []testcase{
+		{
+			Name: "ExcludeDirectory skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "vendor")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "file.go"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.ExcludeDirectory = []string{"vendor"}
+				return walker, fileListQueue
+			},
+			ExpectedReason: SkipReasonExcludeDirectory,
+		},
+		{
+			Name: "IncludeDirectory skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "other")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "file.go"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.IncludeDirectory = []string{"wanted"}
+				return walker, fileListQueue
+			},
+			ExpectedReason: SkipReasonIncludeDirectory,
+		},
+		{
+			Name: "ExcludeDirectoryRegex skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "build")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "file.go"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.ExcludeDirectoryRegex = []*regexp.Regexp{regexp.MustCompile("^build$")}
+				return walker, fileListQueue
+			},
+			ExpectedReason: SkipReasonExcludeDirectoryRegex,
+		},
+		{
+			Name: "IncludeDirectoryRegex skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "other")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "file.go"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.IncludeDirectoryRegex = []*regexp.Regexp{regexp.MustCompile("^src$")}
+				return walker, fileListQueue
+			},
+			ExpectedReason: SkipReasonIncludeDirectoryRegex,
+		},
+		{
+			Name: "LocationExcludePattern directory skip",
+			Setup: func() (*FileWalker, chan *File) {
+				d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+				d2 := filepath.Join(d, "skipme")
+				_ = os.Mkdir(d2, 0777)
+				_, _ = os.Create(filepath.Join(d2, "file.go"))
+
+				fileListQueue := make(chan *File, 10)
+				walker := NewFileWalker(d, fileListQueue)
+				walker.LocationExcludePattern = []string{"skipme"}
+				return walker, fileListQueue
+			},
+			ExpectedReason: SkipReasonLocationExcludePattern,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			walker, fileListQueue := tc.Setup()
+
+			var dirSkips []skipRecord
+			walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+				if isDir {
+					dirSkips = append(dirSkips, skipRecord{path: path, name: name, isDir: isDir, reason: reason})
+				}
+			})
+			walker.osReadFile = func(name string) ([]byte, error) { return nil, nil }
+			_ = walker.Start()
+
+			// drain channel
+			for range fileListQueue {
+			}
+
+			if len(dirSkips) == 0 {
+				t.Errorf("expected at least one directory skip but got none")
+				return
+			}
+
+			if dirSkips[0].reason != tc.ExpectedReason {
+				t.Errorf("expected reason %q but got %q", tc.ExpectedReason, dirSkips[0].reason)
+			}
+			if !dirSkips[0].isDir {
+				t.Error("expected isDir=true")
+			}
+		})
+	}
+}
+
+func TestSkipHandlerNilIsIgnored(t *testing.T) {
+	d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+	_, _ = os.Create(filepath.Join(d, "test.txt"))
+
+	fileListQueue := make(chan *File, 10)
+	walker := NewFileWalker(d, fileListQueue)
+	walker.ExcludeFilename = []string{"test.txt"}
+	walker.SetSkipHandler(nil) // should be a no-op, keeping the default
+	_ = walker.Start()
+
+	count := 0
+	for range fileListQueue {
+		count++
+	}
+
+	if count != 0 {
+		t.Error("Expected 0 files")
+	}
+}
