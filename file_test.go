@@ -1245,6 +1245,242 @@ func TestSkipHandlerDirectoryCases(t *testing.T) {
 	}
 }
 
+// TestSkipReasonAfterGitignoreNegationFile verifies that when a nested .gitignore
+// un-ignores a file (negation pattern), the skipReason is not stale from the
+// parent gitignore. If a subsequent filter then skips the file, skipReason must
+// reflect that filter, not the earlier gitignore.
+func TestSkipReasonAfterGitignoreNegationFile(t *testing.T) {
+	type skipRecord struct {
+		name   string
+		isDir  bool
+		reason SkipReason
+	}
+
+	t.Run("negated file not skipped", func(t *testing.T) {
+		// root/.gitignore ignores *.log
+		// root/sub/.gitignore un-ignores *.log via !*.log
+		// root/sub/app.log should NOT be skipped
+		d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+		_ = os.WriteFile(filepath.Join(d, ".gitignore"), []byte("*.log\n"), 0644)
+
+		sub := filepath.Join(d, "sub")
+		_ = os.Mkdir(sub, 0777)
+		_ = os.WriteFile(filepath.Join(sub, ".gitignore"), []byte("!*.log\n"), 0644)
+		_, _ = os.Create(filepath.Join(sub, "app.log"))
+
+		fileListQueue := make(chan *File, 10)
+		walker := NewFileWalker(d, fileListQueue)
+		walker.IncludeHidden = true
+
+		var skips []skipRecord
+		walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+			skips = append(skips, skipRecord{name: name, isDir: isDir, reason: reason})
+		})
+		_ = walker.Start()
+
+		var files []string
+		for f := range fileListQueue {
+			files = append(files, f.Filename)
+		}
+
+		// app.log should appear in output — the negation un-ignored it
+		found := false
+		for _, f := range files {
+			if f == "app.log" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected app.log to be included after gitignore negation, got files=%v skips=%v", files, skips)
+		}
+
+		// app.log should NOT appear in skips
+		for _, s := range skips {
+			if s.name == "app.log" {
+				t.Errorf("app.log should not be skipped but was skipped with reason %q", s.reason)
+			}
+		}
+	})
+
+	t.Run("negated then excluded by later filter has correct reason", func(t *testing.T) {
+		// root/.gitignore ignores *.log
+		// root/sub/.gitignore un-ignores *.log via !*.log
+		// ExcludeListExtensions catches .log files
+		// skipReason must be ExcludeListExtension, NOT Gitignore
+		d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+		_ = os.WriteFile(filepath.Join(d, ".gitignore"), []byte("*.log\n"), 0644)
+
+		sub := filepath.Join(d, "sub")
+		_ = os.Mkdir(sub, 0777)
+		_ = os.WriteFile(filepath.Join(sub, ".gitignore"), []byte("!*.log\n"), 0644)
+		_, _ = os.Create(filepath.Join(sub, "app.log"))
+
+		fileListQueue := make(chan *File, 10)
+		walker := NewFileWalker(d, fileListQueue)
+		walker.ExcludeListExtensions = []string{"log"}
+		walker.IncludeHidden = true
+
+		var skips []skipRecord
+		walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+			skips = append(skips, skipRecord{name: name, isDir: isDir, reason: reason})
+		})
+		_ = walker.Start()
+		for range fileListQueue {
+		}
+
+		// find the skip for app.log
+		for _, s := range skips {
+			if s.name == "app.log" {
+				if s.reason != SkipReasonExcludeListExtension {
+					t.Errorf("expected reason %q but got %q (stale gitignore reason leaked)", SkipReasonExcludeListExtension, s.reason)
+				}
+				return
+			}
+		}
+		t.Error("expected app.log to be skipped by ExcludeListExtensions but it was not skipped at all")
+	})
+
+	t.Run("negated then excluded by ExcludeFilename has correct reason", func(t *testing.T) {
+		// root/.gitignore ignores *.txt
+		// root/sub/.gitignore un-ignores *.txt via !*.txt
+		// ExcludeFilename catches test.txt
+		// skipReason must be ExcludeFilename, NOT Gitignore
+		d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+		_ = os.WriteFile(filepath.Join(d, ".gitignore"), []byte("*.txt\n"), 0644)
+
+		sub := filepath.Join(d, "sub")
+		_ = os.Mkdir(sub, 0777)
+		_ = os.WriteFile(filepath.Join(sub, ".gitignore"), []byte("!*.txt\n"), 0644)
+		_, _ = os.Create(filepath.Join(sub, "test.txt"))
+
+		fileListQueue := make(chan *File, 10)
+		walker := NewFileWalker(d, fileListQueue)
+		walker.ExcludeFilename = []string{"test.txt"}
+		walker.IncludeHidden = true
+
+		var skips []skipRecord
+		walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+			skips = append(skips, skipRecord{name: name, isDir: isDir, reason: reason})
+		})
+		_ = walker.Start()
+		for range fileListQueue {
+		}
+
+		for _, s := range skips {
+			if s.name == "test.txt" && !s.isDir {
+				if s.reason != SkipReasonExcludeFilename {
+					t.Errorf("expected reason %q but got %q (stale gitignore reason leaked)", SkipReasonExcludeFilename, s.reason)
+				}
+				return
+			}
+		}
+		t.Error("expected test.txt to be skipped by ExcludeFilename but it was not skipped at all")
+	})
+}
+
+// TestSkipReasonAfterGitignoreNegationDirectory verifies the same stale-reason
+// protection for directories: when a nested .gitignore un-ignores a directory,
+// subsequent filters must report their own reason, not the earlier gitignore.
+func TestSkipReasonAfterGitignoreNegationDirectory(t *testing.T) {
+	type skipRecord struct {
+		name   string
+		isDir  bool
+		reason SkipReason
+	}
+
+	t.Run("negated directory not skipped", func(t *testing.T) {
+		// root/.gitignore ignores vendor/
+		// root/sub/.gitignore un-ignores vendor/ via !vendor/
+		// root/sub/vendor/ should NOT be skipped
+		d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+		_ = os.WriteFile(filepath.Join(d, ".gitignore"), []byte("vendor/\n"), 0644)
+
+		sub := filepath.Join(d, "sub")
+		_ = os.Mkdir(sub, 0777)
+		_ = os.WriteFile(filepath.Join(sub, ".gitignore"), []byte("!vendor/\n"), 0644)
+
+		vendor := filepath.Join(sub, "vendor")
+		_ = os.Mkdir(vendor, 0777)
+		_, _ = os.Create(filepath.Join(vendor, "lib.go"))
+
+		fileListQueue := make(chan *File, 10)
+		walker := NewFileWalker(d, fileListQueue)
+		walker.IncludeHidden = true
+
+		var dirSkips []skipRecord
+		walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+			if isDir {
+				dirSkips = append(dirSkips, skipRecord{name: name, isDir: isDir, reason: reason})
+			}
+		})
+		_ = walker.Start()
+
+		var files []string
+		for f := range fileListQueue {
+			files = append(files, f.Filename)
+		}
+
+		// lib.go should appear — vendor/ was un-ignored
+		found := false
+		for _, f := range files {
+			if f == "lib.go" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected lib.go inside vendor/ after gitignore negation, got files=%v dirSkips=%v", files, dirSkips)
+		}
+
+		for _, s := range dirSkips {
+			if s.name == "vendor" {
+				t.Errorf("vendor/ should not be skipped but was skipped with reason %q", s.reason)
+			}
+		}
+	})
+
+	t.Run("negated then excluded by ExcludeDirectory has correct reason", func(t *testing.T) {
+		// root/.gitignore ignores vendor/
+		// root/sub/.gitignore un-ignores vendor/ via !vendor/
+		// ExcludeDirectory catches vendor
+		// skipReason must be ExcludeDirectory, NOT Gitignore
+		d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
+		_ = os.WriteFile(filepath.Join(d, ".gitignore"), []byte("vendor/\n"), 0644)
+
+		sub := filepath.Join(d, "sub")
+		_ = os.Mkdir(sub, 0777)
+		_ = os.WriteFile(filepath.Join(sub, ".gitignore"), []byte("!vendor/\n"), 0644)
+
+		vendor := filepath.Join(sub, "vendor")
+		_ = os.Mkdir(vendor, 0777)
+		_, _ = os.Create(filepath.Join(vendor, "lib.go"))
+
+		fileListQueue := make(chan *File, 10)
+		walker := NewFileWalker(d, fileListQueue)
+		walker.ExcludeDirectory = []string{"vendor"}
+		walker.IncludeHidden = true
+
+		var dirSkips []skipRecord
+		walker.SetSkipHandler(func(path string, name string, isDir bool, reason SkipReason) {
+			if isDir {
+				dirSkips = append(dirSkips, skipRecord{name: name, isDir: isDir, reason: reason})
+			}
+		})
+		_ = walker.Start()
+		for range fileListQueue {
+		}
+
+		for _, s := range dirSkips {
+			if s.name == "vendor" {
+				if s.reason != SkipReasonExcludeDirectory {
+					t.Errorf("expected reason %q but got %q (stale gitignore reason leaked)", SkipReasonExcludeDirectory, s.reason)
+				}
+				return
+			}
+		}
+		t.Error("expected vendor/ to be skipped by ExcludeDirectory but it was not skipped at all")
+	})
+}
+
 func TestSkipHandlerNilIsIgnored(t *testing.T) {
 	d, _ := os.MkdirTemp(os.TempDir(), randSeq(10))
 	_, _ = os.Create(filepath.Join(d, "test.txt"))

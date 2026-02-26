@@ -468,6 +468,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonGitignore
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -478,6 +480,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonIgnoreFile
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -488,6 +492,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonCustomIgnore
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -499,6 +505,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			})
 			if shouldIgnore {
 				skipReason = SkipReasonIncludeFilename
+			} else {
+				skipReason = ""
 			}
 		}
 		// Exclude comes after include as it takes precedence
@@ -516,6 +524,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			})
 			if shouldIgnore {
 				skipReason = SkipReasonIncludeFilenameRegex
+			} else {
+				skipReason = ""
 			}
 		}
 		// Exclude comes after include as it takes precedence
@@ -560,6 +570,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			})
 			if shouldIgnore {
 				skipReason = SkipReasonExcludeListExtension
+			} else {
+				skipReason = ""
 			}
 		}
 
@@ -638,6 +650,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonGitignore
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -647,6 +661,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonIgnoreFile
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -656,6 +672,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonCustomIgnore
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -665,6 +683,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				shouldIgnore = ignore.Ignore(joined)
 				if shouldIgnore {
 					skipReason = SkipReasonModuleIgnore
+				} else {
+					skipReason = ""
 				}
 			}
 		}
@@ -678,6 +698,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			})
 			if shouldIgnore {
 				skipReason = SkipReasonIncludeDirectory
+			} else {
+				skipReason = ""
 			}
 		}
 		// Confirm if there are any files in the path deny list which usually includes
@@ -697,6 +719,8 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			})
 			if shouldIgnore {
 				skipReason = SkipReasonIncludeDirectoryRegex
+			} else {
+				skipReason = ""
 			}
 		}
 		// Exclude comes after include as it takes precedence
