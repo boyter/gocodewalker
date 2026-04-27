@@ -268,17 +268,23 @@ func (i *ignore) MatchIsDir(path string, _isdir bool) Match {
 // the path is not located under the base directory of this GitIgnore, or
 // is not matched by this GitIgnore, nil is returned.
 func (i *ignore) Absolute(path string, isdir bool) Match {
-	// does the file share the same directory as this ignore file?
-	if !strings.HasPrefix(path, i._base) {
+	_rel, ok := relativeToBase(i._base, path)
+	if !ok {
 		return nil
 	}
-
-	// extract the relative path of this file
-	_prefix := len(i._base) + 1 // BOYTERWASHERE
-	//_prefix := len(i._base)
-	_rel := string(path[_prefix:])
 	return i.Relative(_rel, isdir)
 } // Absolute()
+
+func relativeToBase(base, path string) (string, bool) {
+	_rel, _err := filepath.Rel(base, path)
+	if _err != nil {
+		return "", false
+	}
+	if _rel == ".." || strings.HasPrefix(_rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return _rel, true
+}
 
 // Relative attempts to match a path relative to the GitIgnore base
 // directory. isdir is used to indicate whether the path represents a file
