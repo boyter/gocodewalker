@@ -276,6 +276,24 @@ func TestMatchAbsolute(t *testing.T) {
 	}
 } // TestMatchAbsolute()
 
+func TestMatchAbsoluteRejectsPathWithBasePrefixOnly(t *testing.T) {
+	_buffer, _err := buffer("file.txt\n")
+	if _err != nil {
+		t.Fatalf("unable to create temporary .gitignore: %s", _err.Error())
+	}
+
+	_ignore := gitignore.New(_buffer, _GITBASE, nil)
+	if _ignore == nil {
+		t.Fatal("expected non-nil GitIgnore instance; nil found")
+	}
+
+	_path := _GITBASE + "xfile.txt"
+	_match := _ignore.Absolute(_path, false)
+	if _match != nil {
+		t.Fatalf("unexpected match for path outside base directory; expected nil, got %v", _match)
+	}
+}
+
 func TestMatchRelative(t *testing.T) {
 	// create a temporary .gitignore
 	_buffer, _err := buffer(_GITMATCH)
