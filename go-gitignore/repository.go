@@ -238,7 +238,8 @@ func (r *repository) Relative(path string, isdir bool) Match {
 	//		  move up the path hierarchy
 	var _last string
 	for {
-		_file := filepath.Join(r._base, _parent, r._file)
+		_file := r._base + string(os.PathSeparator) +
+			filepath.FromSlash(_parent) + string(os.PathSeparator) + r._file
 		_ignore := NewWithCache(_file, r._cache, r._errors)
 		if _ignore != nil {
 			_match := _ignore.Relative(_local, isdir)

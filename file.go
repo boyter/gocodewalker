@@ -353,7 +353,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 					return err
 				}
 
-				gitIgnore := gitignore.New(bytes.NewReader(c), abs, nil)
+				gitIgnore := gitignore.New(bytes.NewReader(c), filepath.ToSlash(abs), nil)
 				gitignores = append(gitignores, gitIgnore)
 			}
 		}
@@ -435,6 +435,22 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			}
 		}
 	}
+	if !f.IgnoreGitIgnore {
+		gitdir := os.Getenv("GIT_DIR")
+		if gitdir == "" {
+			gitdir = filepath.Join(directory, ".git")
+		}
+		file := filepath.Join(gitdir, "info", "exclude")
+		if content, err := os.ReadFile(file); err == nil {
+			abs, err := filepath.Abs(directory)
+			if err == nil {
+				gitExclude := gitignore.New(bytes.NewReader(content), abs, nil)
+				if gitExclude != nil {
+					gitignores = append(gitignores, gitExclude)
+				}
+			}
+		}
+	}
 
 	// If we have custom ignore patterns defined we should concatenate them and treat them as a single gitignore file
 	if len(f.CustomIgnorePatterns) > 0 {
@@ -456,7 +472,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	for _, file := range files {
 		shouldIgnore := false
 		var skipReason SkipReason
-		joined := filepath.Join(directory, file.Name())
+		joined := filepath.ToSlash(filepath.Join(directory, file.Name()))
 
 		for _, ignore := range gitignores {
 			// we have the following situations
@@ -634,7 +650,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	for _, dir := range dirs {
 		var shouldIgnore bool
 		var skipReason SkipReason
-		joined := filepath.Join(directory, dir.Name())
+		joined := filepath.ToSlash(filepath.Join(directory, dir.Name()))
 
 		// Check against the ignore files we have if the file we are looking at
 		// should be ignored

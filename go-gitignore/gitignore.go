@@ -249,6 +249,7 @@ func (i *ignore) Match(path string) Match {
 
 func (i *ignore) MatchIsDir(path string, _isdir bool) Match {
 	// ensure we have the absolute path for the given file
+	path = filepath.ToSlash(path) // normalize before cache lookup
 	if v, ok := matchIsDirCache.Load(path); ok {
 		return i.Absolute(v.(string), _isdir)
 	}
@@ -258,6 +259,7 @@ func (i *ignore) MatchIsDir(path string, _isdir bool) Match {
 		i._errors(NewError(_err, Position{}))
 		return nil
 	}
+	_path = filepath.ToSlash(_path) // ensure stored value is slash-form
 	matchIsDirCache.Store(path, _path)
 
 	// attempt to match the absolute path
