@@ -796,48 +796,49 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 	return nil
 }
 
-// FindRepositoryRoot given the supplied directory backwards looking for .git or .hg
-// directories indicating we should start our search from that
-// location as it's the root.
-// Returns the first directory below supplied with .git or .hg in it
-// otherwise the supplied directory
+// FindRepositoryRoot given the supplied directory walks backwards looking for a
+// .git or .hg entry indicating we should start our search from that location as
+// it's the root.
+// Returns the first matching ancestor (inclusive of startDirectory) otherwise
+// the supplied directory.
+// This recognizes git worktrees and submodules, where .git is a regular file
+// (containing "gitdir: …") rather than a directory — so a nested worktree
+// resolves to its own root instead of the enclosing main repo.
 func FindRepositoryRoot(startDirectory string) string {
-	// Firstly try to determine our real location
-	curdir, err := os.Getwd()
+	// Firstly try to determine our real location so the upward walk is
+	// anchored to an absolute path
+	abs, err := filepath.Abs(startDirectory)
 	if err != nil {
 		return startDirectory
 	}
 
-	// Check if we have .git or .hg where we are and if
-	// so just return because we are already there
-	if checkForGitOrMercurial(curdir) {
-		return startDirectory
-	}
-
-	// We did not find something, so now we need to walk the file tree
-	// backwards in a cross platform way and if we find
+	// Walk the file tree backwards in a cross platform way and if we find
 	// a match we return that
-	lastIndex := strings.LastIndex(curdir, string(os.PathSeparator))
-	for lastIndex != -1 {
-		curdir = curdir[:lastIndex]
-
-		if checkForGitOrMercurial(curdir) {
-			return curdir
+	dir := abs
+	for {
+		if checkForGitOrMercurial(dir) {
+			return dir
 		}
 
-		lastIndex = strings.LastIndex(curdir, string(os.PathSeparator))
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// We didn't find a good match so return the supplied directory
+			// so that we start the search from where we started at least
+			// rather than the root
+			return startDirectory
+		}
+		dir = parent
 	}
-
-	// If we didn't find a good match return the supplied directory
-	// so that we start the search from where we started at least
-	// rather than the root
-	return startDirectory
 }
 
-// Check if there is a .git or .hg folder in the supplied directory
+// Check if there is a .git or .hg entry in the supplied directory.
+// .git is accepted as either a directory (normal repo) or a regular file
+// (git worktree, submodule).
 func checkForGitOrMercurial(curdir string) bool {
-	if stat, err := os.Stat(filepath.Join(curdir, ".git")); err == nil && stat.IsDir() {
-		return true
+	if stat, err := os.Stat(filepath.Join(curdir, ".git")); err == nil {
+		if stat.IsDir() || stat.Mode().IsRegular() {
+			return true
+		}
 	}
 
 	if stat, err := os.Stat(filepath.Join(curdir, ".hg")); err == nil && stat.IsDir() {
