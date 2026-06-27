@@ -78,6 +78,61 @@ func TestFindRepositoryRootWorktree(t *testing.T) {
 	}
 }
 
+// TestWalkWildcardIgnoreThenReinclude reproduces issue #24: a wildcard ignore
+// "/*/" that re-includes a directory via negation "!/keep/" must still walk the
+// re-included directory's nested subdirectories. The leading-slash "/*/" pattern
+// is anchored to the .gitignore directory and only matches first-level entries,
+// so "keep/sub" must not be ignored (matching `git ls-files`).
+func TestWalkWildcardIgnoreThenReinclude(t *testing.T) {
+	tmp := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tmp, ".gitignore"), []byte("/*/\n!/keep/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, "keep", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, "drop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "keep", "a.rs"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "keep", "sub", "c.rs"), []byte("c"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "drop", "d.rs"), []byte("d"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fileListQueue := make(chan *File, 1000)
+	walker := NewFileWalker(tmp, fileListQueue)
+	if err := walker.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]bool{}
+	for f := range fileListQueue {
+		rel, err := filepath.Rel(tmp, f.Location)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got[filepath.ToSlash(rel)] = true
+	}
+
+	// Expected matches `git ls-files`: keep/a.rs and keep/sub/c.rs kept,
+	// everything under drop/ ignored.
+	if !got["keep/a.rs"] {
+		t.Errorf("expected keep/a.rs to be walked, got %v", got)
+	}
+	if !got["keep/sub/c.rs"] {
+		t.Errorf("expected keep/sub/c.rs to be walked (issue #24), got %v", got)
+	}
+	if got["drop/d.rs"] {
+		t.Errorf("expected drop/d.rs to be ignored by /*/, got %v", got)
+	}
+}
+
 func TestNewFileWalker(t *testing.T) {
 	fileListQueue := make(chan *File, 10_000) // NB we set buffered to ensure we get everything
 	curdir, _ := os.Getwd()

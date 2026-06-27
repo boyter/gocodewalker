@@ -135,10 +135,11 @@ func TestNamePatternSuffixMatch(t *testing.T) {
 // TestNamePatternSuffixMatchAnchored tests anchored suffix patterns.
 func TestNamePatternSuffixMatchAnchored(t *testing.T) {
 	runNameTests(t, []nameMatchTest{
-		// anchored suffix: matches full relative path with HasSuffix
-		// note: name patterns use fnmatch flags=0, so * matches through /
+		// an anchored name pattern is a single path component anchored to the
+		// base directory, so it only matches single-segment paths and never
+		// spans the '/' separator (matching git's behaviour for "/*.o")
 		{"/*.o", "foo.o", false, true},
-		{"/*.o", "src/foo.o", false, true}, // * matches "src/foo" (no FNM_PATHNAME)
+		{"/*.o", "src/foo.o", false, false}, // anchored: must not match nested
 	})
 }
 
