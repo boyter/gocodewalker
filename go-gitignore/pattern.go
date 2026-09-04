@@ -300,11 +300,19 @@ func (a *any) match(path []string, tokens []*Token) bool {
 	_token := tokens[0]
 	switch _token.Type {
 	case ANY:
+		// A trailing "**" matches everything *inside* the directory named
+		// by the preceding tokens, so it must consume at least one path
+		// component: gitignore(5) gives "abc/**" as matching all files
+		// inside "abc", and git does not ignore "abc" itself. A leading or
+		// embedded "**" is the opposite case and may match no component at
+		// all, so "**/foo" matches "foo" and "a/**/b" matches "a/b".
+		if len(tokens) == 1 {
+			return len(path) != 0
+		}
 		if len(path) == 0 {
 			return a.match(path, tokens[1:])
-		} else {
-			return a.match(path, tokens[1:]) || a.match(path[1:], tokens)
 		}
+		return a.match(path, tokens[1:]) || a.match(path[1:], tokens)
 
 	default:
 		// if we have a non-ANY token, then we must have a non-empty path

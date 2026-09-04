@@ -387,7 +387,9 @@ var (
 		{"Documentation/foo.html", "!foo*.html", false, false},
 		{"Documentation/gitignore.html", "*.html", true, false},
 		{"Documentation/test.a.html", "*.html", true, false},
-		{"exclude/", "exclude/**", true, false},
+		// "exclude/**" matches everything inside "exclude", but not
+		// "exclude" itself: git check-ignore does not ignore it.
+		{"exclude/", "", false, false},
 		{"exclude/dir1/", "exclude/**", true, false},
 		{"exclude/dir1/dir2/", "exclude/**", true, false},
 		{"exclude/dir1/dir2/dir3/", "exclude/**", true, false},
@@ -417,7 +419,9 @@ var (
 		{"src/findthis.o", "!findthis*", false, false},
 		{"src/internal.o", "*.[oa]", true, false},
 		{"subdir/", "", false, false},
-		{"subdir/hide/", "**/hide/**", true, false},
+		// as above, the trailing "**" requires a path component below
+		// "hide", so "hide" itself is not matched
+		{"subdir/hide/", "", false, false},
 		{"subdir/hide/foo", "**/hide/**", true, false},
 		{"subdir/logdir/", "", false, false},
 		{"subdir/logdir/log/", "**/logdir/log", true, false},
