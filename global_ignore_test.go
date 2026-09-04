@@ -158,12 +158,16 @@ func TestCustomIgnoreFilesMissingPathErrorHandlerStops(t *testing.T) {
 	walker.CustomIgnoreFiles = []string{missing}
 	walker.SetErrorHandler(func(error) bool { return false })
 
-	var walkErr error
+	// Start closes fileListQueue before it returns, so the error has to come
+	// back over its own channel rather than a plain variable, otherwise reading
+	// it here races with the walking goroutine assigning it
+	errChan := make(chan error, 1)
 	go func() {
-		walkErr = walker.Start()
+		errChan <- walker.Start()
 	}()
 	for range fileListQueue {
 	}
+	walkErr := <-errChan
 
 	if walkErr == nil {
 		t.Errorf("expected an error when the error handler refuses a missing ignore file, got nil")
