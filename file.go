@@ -29,6 +29,12 @@ const (
 	Ignore                = ".ignore"
 	GitModules            = ".gitmodules"
 	IgnoreBinaryFileBytes = 1000
+
+	// gitDirName is the entry that marks a repository root, either as a
+	// directory for a normal checkout or as a regular file for a worktree or
+	// submodule. Kept unexported because it is an implementation detail of
+	// finding $GIT_DIR/info/exclude rather than something callers configure.
+	gitDirName = ".git"
 )
 
 // ErrTerminateWalk error which indicates that the walker was terminated
@@ -98,6 +104,8 @@ type FileWalker struct {
 	IncludeHidden          bool     // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
+	gitDirFromEnv          bool   // was $GIT_DIR set when this walk started
+	gitExcludeFromEnv      []byte // contents of $GIT_DIR/info/exclude, read once per walk
 	countingSemaphore      chan bool
 	semaphoreCount         int
 	MaxDepth               int
@@ -302,6 +310,11 @@ func (f *FileWalker) Start() error {
 	// done here because it should not change while walking
 	f.countingSemaphore = make(chan bool, concurrency)
 
+	// $GIT_DIR cannot change while walking, so it is read once here rather than
+	// once per directory, and when it is set the exclude file it names is read
+	// once here as well rather than re-read in every directory below.
+	f.readEnvGitExclude()
+
 	if len(f.directories) != 0 {
 		eg := errgroup.Group{}
 		for _, directory := range f.directories {
@@ -320,7 +333,7 @@ func (f *FileWalker) Start() error {
 				if gerr != nil {
 					return f.stop(gerr)
 				}
-				return f.walkDirectoryRecursive(0, d, globalIgnores, []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
+				return f.walkDirectoryRecursive(0, d, globalIgnores, f.rootGitIgnores(d), []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
 			})
 		}
 
@@ -332,7 +345,7 @@ func (f *FileWalker) Start() error {
 			if gerr != nil {
 				_ = f.stop(gerr)
 			} else {
-				_ = f.walkDirectoryRecursive(0, f.directory, globalIgnores, []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
+				_ = f.walkDirectoryRecursive(0, f.directory, globalIgnores, f.rootGitIgnores(f.directory), []gitignore.GitIgnore{}, []gitignore.GitIgnore{}, []gitignore.GitIgnore{})
 			}
 			<-f.countingSemaphore
 		}
@@ -353,6 +366,113 @@ func (f *FileWalker) Start() error {
 	f.walkMutex.Unlock()
 
 	return err
+}
+
+// readEnvGitExclude reads $GIT_DIR once for the whole walk and, when it is set,
+// reads the exclude file it names once. Previously both happened in every
+// directory: the environment lookup was repeated for a value that cannot change
+// while walking, and the same absolute file was read again for each directory
+// and then anchored at that directory, so a root anchored pattern such as
+// /build applied at every level instead of only at the root. When $GIT_DIR is
+// set it names one git directory for the whole walk, so the file it holds is
+// read once here and anchored at each walk root by rootGitIgnores.
+func (f *FileWalker) readEnvGitExclude() {
+	f.gitDirFromEnv = false
+	f.gitExcludeFromEnv = nil
+
+	if f.IgnoreGitIgnore {
+		return
+	}
+
+	gitdir := os.Getenv("GIT_DIR")
+	if gitdir == "" {
+		return
+	}
+
+	// record that it was set even when the file is missing, because $GIT_DIR
+	// overrides looking for a .git entry while walking either way
+	f.gitDirFromEnv = true
+	if content, err := os.ReadFile(filepath.Join(gitdir, "info", "exclude")); err == nil {
+		f.gitExcludeFromEnv = content
+	}
+}
+
+// rootGitIgnores returns the seed gitignores for a walk root, which is the
+// exclude file named by $GIT_DIR anchored at that root when there is one, and
+// nothing otherwise.
+func (f *FileWalker) rootGitIgnores(directory string) []gitignore.GitIgnore {
+	if len(f.gitExcludeFromEnv) == 0 {
+		return []gitignore.GitIgnore{}
+	}
+
+	abs, err := filepath.Abs(directory)
+	if err != nil {
+		return []gitignore.GitIgnore{}
+	}
+
+	return []gitignore.GitIgnore{gitignore.New(bytes.NewReader(f.gitExcludeFromEnv), abs, nil)}
+}
+
+// gitInfoExcludePath returns the path of the info/exclude file belonging to the
+// .git entry found in a directory.
+//
+// A normal checkout has .git as a directory and the file simply sits inside it.
+// A submodule, or a checkout made by git worktree add, instead has .git as a
+// regular file holding a "gitdir: <path>" line naming the real git directory,
+// and for a worktree that directory holds a commondir file naming the shared
+// directory which owns info/ (see gitrepository-layout). Following both is what
+// lets a worktree honour the exclude file of the repository it belongs to, the
+// way git itself does.
+//
+// A symlinked .git also reports as not being a directory, and reading it as a
+// file fails, so anything that does not parse falls back to joining onto the
+// entry as before, which resolves the link exactly as it always has.
+func gitInfoExcludePath(directory string, entry fs.DirEntry) string {
+	gitdir := filepath.Join(directory, gitDirName)
+
+	if !entry.IsDir() {
+		if resolved := resolveGitDirFile(directory, gitdir); resolved != "" {
+			gitdir = resolved
+		}
+	}
+
+	return filepath.Join(gitdir, "info", "exclude")
+}
+
+// resolveGitDirFile reads a .git file and returns the git directory that owns
+// info/, or an empty string if the file is not a readable "gitdir:" pointer.
+func resolveGitDirFile(directory string, gitFile string) string {
+	content, err := os.ReadFile(gitFile)
+	if err != nil {
+		return ""
+	}
+
+	line, _, _ := strings.Cut(string(content), "\n")
+	if !strings.HasPrefix(line, "gitdir:") {
+		return ""
+	}
+
+	gitdir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+	if gitdir == "" {
+		return ""
+	}
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(directory, gitdir)
+	}
+
+	// a worktree git directory is per worktree, but info/ lives in the common
+	// directory it points at, which is the git directory of the main checkout
+	if content, err := os.ReadFile(filepath.Join(gitdir, "commondir")); err == nil {
+		if common := strings.TrimSpace(string(content)); common != "" {
+			if filepath.IsAbs(common) {
+				gitdir = common
+			} else {
+				gitdir = filepath.Join(gitdir, common)
+			}
+		}
+	}
+
+	return gitdir
 }
 
 // buildGlobalIgnores reads each path in CustomIgnoreFiles, parses it as gitignore
@@ -441,11 +561,20 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 
 	files := []fs.DirEntry{}
 	dirs := []fs.DirEntry{}
+	// the .git entry if this directory has one, which marks it as a repository
+	// root and is the only place an info/exclude file can be found. It is picked
+	// up here because the listing is already in hand, so no extra syscall is
+	// needed to know whether looking for that file is worth it at all
+	var gitEntry fs.DirEntry
 
 	// We want to break apart the files and directories from the
 	// return as we loop over them differently and this avoids some
 	// nested if logic at the expense of a "redundant" loop
 	for _, file := range foundFiles {
+		if file.Name() == gitDirName {
+			gitEntry = file
+		}
+
 		if file.IsDir() {
 			dirs = append(dirs, file)
 		} else {
@@ -559,13 +688,15 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			}
 		}
 	}
-	if !f.IgnoreGitIgnore {
-		gitdir := os.Getenv("GIT_DIR")
-		if gitdir == "" {
-			gitdir = filepath.Join(directory, ".git")
-		}
-		file := filepath.Join(gitdir, "info", "exclude")
-		if content, err := os.ReadFile(file); err == nil {
+	// info/exclude only exists at a repository root, so blindly trying to read it
+	// in every directory was one guaranteed failed open per directory on any large
+	// tree, 6,052 of 6,053 of them on the linux kernel. The directory listing is
+	// already in hand and already tells us whether this is a repository root, the
+	// same way .gitignore is found above, so only look when there is a .git entry
+	// to look inside. When $GIT_DIR is set it overrides the .git entry entirely,
+	// as it always has, and has already been read once by readEnvGitExclude.
+	if !f.IgnoreGitIgnore && !f.gitDirFromEnv && gitEntry != nil {
+		if content, err := os.ReadFile(gitInfoExcludePath(directory, gitEntry)); err == nil {
 			abs, err := filepath.Abs(directory)
 			if err == nil {
 				gitExclude := gitignore.New(bytes.NewReader(content), abs, nil)

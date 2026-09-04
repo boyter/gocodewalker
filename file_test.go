@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1764,6 +1766,265 @@ func TestGitInfoExcludeIgnoredWhenGitIgnoreDisabled(t *testing.T) {
 
 	if count != 1 {
 		t.Errorf("expected 1 file but got %d", count)
+	}
+}
+
+// walkNames walks the supplied directory and returns the emitted file paths
+// relative to it, sorted, so a test can state exactly what it expects to see.
+func walkNames(t *testing.T, directory string) []string {
+	t.Helper()
+
+	fileListQueue := make(chan *File, 100)
+	walker := NewFileWalker(directory, fileListQueue)
+	go func() { _ = walker.Start() }()
+
+	var found []string
+	for f := range fileListQueue {
+		rel, err := filepath.Rel(directory, f.Location)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found = append(found, filepath.ToSlash(rel))
+	}
+	sort.Strings(found)
+	return found
+}
+
+// TestGitInfoExcludeOnlyAppliesAtRepositoryRoot checks that the exclude file is
+// still found and applied at a repository root, and that a directory below the
+// root which happens to hold its own .git/info/exclude has that file applied to
+// it too, since the walker treats any directory holding a .git entry as a root.
+// This is the case the whole exclude branch exists for, so it must keep working
+// now that the file is only looked for when a .git entry is actually present.
+func TestGitInfoExcludeOnlyAppliesAtRepositoryRoot(t *testing.T) {
+	testDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(testDir, ".git", "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, ".git", "info", "exclude"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(testDir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"secret.txt", "keep.txt", "sub/secret.txt", "sub/keep.txt"} {
+		if err := os.WriteFile(filepath.Join(testDir, filepath.FromSlash(name)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := walkNames(t, testDir)
+	want := []string{"keep.txt", "sub/keep.txt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
+	}
+}
+
+// TestGitInfoExcludeWorktree covers a checkout made by git worktree add, where
+// .git is a regular file pointing at a per worktree git directory whose info/
+// actually lives in the common directory named by its commondir file. The
+// walker used to join info/exclude onto the .git file itself, so the read
+// always failed and a worktree silently ignored the exclude file of the
+// repository it belongs to. It now follows the pointer the way git does.
+func TestGitInfoExcludeWorktree(t *testing.T) {
+	tmp := t.TempDir()
+
+	// the main checkout, which owns info/exclude
+	main := filepath.Join(tmp, "main")
+	if err := os.MkdirAll(filepath.Join(main, ".git", "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(main, ".git", "info", "exclude"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// the per worktree git directory, pointing back at the common directory
+	worktreeGitDir := filepath.Join(main, ".git", "worktrees", "wt")
+	if err := os.MkdirAll(worktreeGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktreeGitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// the worktree checkout itself
+	worktree := filepath.Join(tmp, "wt")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+worktreeGitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"secret.txt", "keep.txt"} {
+		if err := os.WriteFile(filepath.Join(worktree, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := walkNames(t, worktree)
+	want := []string{"keep.txt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
+	}
+}
+
+// TestGitInfoExcludeSubmodule covers a submodule checkout, where .git is a
+// regular file naming a git directory by a relative path and that directory
+// owns info/ directly, with no commondir indirection.
+func TestGitInfoExcludeSubmodule(t *testing.T) {
+	tmp := t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(tmp, ".git", "modules", "vendored", "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".git", "modules", "vendored", "info", "exclude"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	submodule := filepath.Join(tmp, "vendored")
+	if err := os.MkdirAll(submodule, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(submodule, ".git"), []byte("gitdir: ../.git/modules/vendored\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"secret.txt", "keep.txt"} {
+		if err := os.WriteFile(filepath.Join(submodule, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := walkNames(t, submodule)
+	want := []string{"keep.txt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
+	}
+}
+
+// TestGitInfoExcludeUnreadableGitFile checks that a .git file which is not a
+// gitdir pointer does not break the walk or wrongly exclude anything.
+func TestGitInfoExcludeUnreadableGitFile(t *testing.T) {
+	testDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(testDir, ".git"), []byte("not a pointer at all\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "keep.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := walkNames(t, testDir)
+	want := []string{"keep.txt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
+	}
+}
+
+// TestGitInfoExcludeSymlinkedGitDir checks that a .git which is a symlink to a
+// real git directory keeps working. A symlink reports as not a directory in the
+// listing just like a worktree pointer file does, so it takes the gitdir parse
+// path, fails to parse, and has to fall back to joining onto the link itself.
+func TestGitInfoExcludeSymlinkedGitDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks on windows needs privileges we should not assume")
+	}
+
+	tmp := t.TempDir()
+
+	realGitDir := filepath.Join(tmp, "realgit")
+	if err := os.MkdirAll(filepath.Join(realGitDir, "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(realGitDir, "info", "exclude"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	testDir := filepath.Join(tmp, "tree")
+	if err := os.MkdirAll(testDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realGitDir, filepath.Join(testDir, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"secret.txt", "keep.txt"} {
+		if err := os.WriteFile(filepath.Join(testDir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := walkNames(t, testDir)
+	want := []string{"keep.txt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
+	}
+}
+
+// TestGitInfoExcludeGitDirEnvAnchoredAtRoot checks that when $GIT_DIR is set the
+// exclude file it names is anchored at the walk root only. It used to be read
+// again in every directory and anchored at whichever directory was being walked,
+// so a root anchored pattern such as /b.go excluded b.go at every level rather
+// than only at the root.
+func TestGitInfoExcludeGitDirEnvAnchoredAtRoot(t *testing.T) {
+	tmp := t.TempDir()
+
+	gitDir := filepath.Join(tmp, "gitdir")
+	if err := os.MkdirAll(filepath.Join(gitDir, "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "info", "exclude"), []byte("/b.go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	testDir := filepath.Join(tmp, "tree")
+	if err := os.MkdirAll(filepath.Join(testDir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"b.go", "keep.go", "sub/b.go"} {
+		if err := os.WriteFile(filepath.Join(testDir, filepath.FromSlash(name)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("GIT_DIR", gitDir)
+
+	got := walkNames(t, testDir)
+	want := []string{"keep.go", "sub/b.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
+	}
+}
+
+// TestGitInfoExcludeGitDirEnvOverridesLocal checks that $GIT_DIR still wins over
+// a .git entry in the directory being walked, which is what it has always done.
+func TestGitInfoExcludeGitDirEnvOverridesLocal(t *testing.T) {
+	tmp := t.TempDir()
+
+	gitDir := filepath.Join(tmp, "gitdir")
+	if err := os.MkdirAll(filepath.Join(gitDir, "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "info", "exclude"), []byte("fromenv.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	testDir := filepath.Join(tmp, "tree")
+	if err := os.MkdirAll(filepath.Join(testDir, ".git", "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, ".git", "info", "exclude"), []byte("fromlocal.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"fromenv.txt", "fromlocal.txt", "keep.txt"} {
+		if err := os.WriteFile(filepath.Join(testDir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("GIT_DIR", gitDir)
+
+	got := walkNames(t, testDir)
+	want := []string{"fromlocal.txt", "keep.txt"}
+	if !slices.Equal(got, want) {
+		t.Errorf("expected %v but got %v", want, got)
 	}
 }
 
