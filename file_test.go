@@ -4,6 +4,7 @@ package gocodewalker
 
 import (
 	"errors"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -2255,5 +2256,77 @@ func TestZeroValueWalkerDoesNotDeadlock(t *testing.T) {
 
 	if count == 0 {
 		t.Error("expected to find at least one file")
+	}
+}
+
+// TestWalkRelativeAndAbsoluteRootAgree pins the invariant the walk relies on to
+// match ignore files cheaply: a path tested against a .gitignore is built by
+// concatenating the resolved root, rather than resolved one path at a time, so
+// a relative root and the absolute root it resolves to must walk to the same
+// set of files. Nested .gitignore files matter here because a path deep in the
+// tree is tested against every ignore file above it.
+func TestWalkRelativeAndAbsoluteRootAgree(t *testing.T) {
+	tmp := t.TempDir()
+
+	for _, dir := range []string{"keep/sub", "drop", "nested/keep", "nested/skip"} {
+		if err := os.MkdirAll(filepath.Join(tmp, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".gitignore"), []byte("drop/\n*.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "nested", ".gitignore"), []byte("skip/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{
+		"keep/a.rs", "keep/sub/b.rs", "keep/sub/c.log",
+		"drop/d.rs", "nested/keep/e.rs", "nested/skip/f.rs",
+	} {
+		if err := os.WriteFile(filepath.Join(tmp, file), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	walk := func(root string) map[string]bool {
+		t.Helper()
+		fileListQueue := make(chan *File, 1000)
+		walker := NewFileWalker(root, fileListQueue)
+		if err := walker.Start(); err != nil {
+			t.Fatal(err)
+		}
+
+		got := map[string]bool{}
+		for f := range fileListQueue {
+			rel, err := filepath.Rel(root, f.Location)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got[filepath.ToSlash(rel)] = true
+		}
+		return got
+	}
+
+	absolute := walk(tmp)
+
+	// The same tree reached by a relative root, which is what makes MatchIsDir
+	// resolve rather than take the path as given.
+	t.Chdir(filepath.Dir(tmp))
+	relative := walk(filepath.Base(tmp))
+
+	if !maps.Equal(absolute, relative) {
+		t.Errorf("relative and absolute roots disagree:\n absolute %v\n relative %v", absolute, relative)
+	}
+
+	// Guard against both walks being identically wrong.
+	for _, want := range []string{"keep/a.rs", "keep/sub/b.rs", "nested/keep/e.rs"} {
+		if !absolute[want] {
+			t.Errorf("expected %s to be walked, got %v", want, absolute)
+		}
+	}
+	for _, notWant := range []string{"drop/d.rs", "keep/sub/c.log", "nested/skip/f.rs"} {
+		if absolute[notWant] {
+			t.Errorf("expected %s to be ignored, got %v", notWant, absolute)
+		}
 	}
 }
