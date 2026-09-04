@@ -8,8 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestFindRepositoryRoot(t *testing.T) {
@@ -408,6 +412,11 @@ func TestNewFileWalkerIgnoreFileCases(t *testing.T) {
 	}
 }
 
+// NB the CustomIgnorePatterns relative cases here fail under go test -count=2
+// and above. That is not this test's fault: go-gitignore keeps a process wide
+// matchIsDirCache mapping a raw path to an absolute one, so the relative path
+// "test.md" stays pinned to the temp directory of the first run and no longer
+// resolves under the second run's base. See the walker notes for the details.
 func TestNewFileWalkerFileCases(t *testing.T) {
 	type testcase struct {
 		Name     string
@@ -646,6 +655,21 @@ func TestNewFileWalkerFileCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			// some cases chdir into a temp directory to exercise relative paths
+			// and never chdir back, which leaves the whole process sitting in a
+			// temp directory for every test that runs after them. Put it back.
+			// NB this is not enough on its own to make go test -count=2 pass,
+			// see the note on TestNewFileWalkerFileCases for why
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := os.Chdir(cwd); err != nil {
+					t.Fatal(err)
+				}
+			}()
+
 			osReadFile := func(name string) ([]byte, error) {
 				return nil, nil
 			}
@@ -1740,5 +1764,235 @@ func TestGitInfoExcludeIgnoredWhenGitIgnoreDisabled(t *testing.T) {
 
 	if count != 1 {
 		t.Errorf("expected 1 file but got %d", count)
+	}
+}
+
+// TestSetConcurrencyIsHonoured guards against the walker sizing its semaphore
+// from the package level default rather than the value the caller supplied,
+// which silently ignored every call to SetConcurrency.
+func TestSetConcurrencyIsHonoured(t *testing.T) {
+	for _, want := range []int{1, 3, 64} {
+		fileListQueue := make(chan *File, 10_000)
+		curdir, _ := os.Getwd()
+		walker := NewFileWalker(curdir, fileListQueue)
+		walker.SetConcurrency(want)
+
+		go func() { _ = walker.Start() }()
+		for range fileListQueue {
+		}
+
+		if got := cap(walker.countingSemaphore); got != want {
+			t.Errorf("SetConcurrency(%d) gave a semaphore of %d", want, got)
+		}
+	}
+}
+
+// TestSetConcurrencyBoundsWalkingGoroutines checks that the number of
+// directories being walked at once never exceeds the configured concurrency,
+// so that a pathological tree cannot produce unbounded goroutine growth.
+func TestSetConcurrencyBoundsWalkingGoroutines(t *testing.T) {
+	root := t.TempDir()
+	// wide and shallow, so there is always more work available than there are
+	// slots and the walker has every opportunity to over-fork
+	for i := 0; i < 200; i++ {
+		d := filepath.Join(root, "d"+strconv.Itoa(i), "nested")
+		if err := os.MkdirAll(d, 0777); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(d, "f.txt"), "")
+	}
+
+	const concurrency = 4
+
+	var mu sync.Mutex
+	var inFlight, peak int
+	fileListQueue := make(chan *File, 10_000)
+	walker := NewFileWalker(root, fileListQueue)
+	walker.SetConcurrency(concurrency)
+	// the skip handler runs on the walking goroutines, so it is a cheap way to
+	// sample how many of them are inside a directory at the same time
+	walker.SetSkipHandler(func(string, string, bool, SkipReason) {})
+	walker.osReadFile = func(name string) ([]byte, error) {
+		mu.Lock()
+		inFlight++
+		if inFlight > peak {
+			peak = inFlight
+		}
+		mu.Unlock()
+		time.Sleep(time.Millisecond)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return os.ReadFile(name)
+	}
+	// give the walker something to read in every directory so osReadFile is hit
+	walker.CustomIgnore = []string{"f.txt"}
+
+	go func() { _ = walker.Start() }()
+	for range fileListQueue {
+	}
+
+	mu.Lock()
+	got := peak
+	mu.Unlock()
+
+	if got > concurrency {
+		t.Errorf("expected at most %d directories walked at once, saw %d", concurrency, got)
+	}
+}
+
+// TestTerminateFromDepth checks that Terminate stops a walk promptly from any
+// depth rather than only at the root, that it reports ErrTerminateWalk, and
+// that it neither deadlocks on the output channel nor leaks goroutines.
+func TestTerminateFromDepth(t *testing.T) {
+	root := t.TempDir()
+	// deep enough that the walk is well below the top level when we terminate
+	dir := root
+	for i := 0; i < 60; i++ {
+		dir = filepath.Join(dir, "d"+strconv.Itoa(i))
+		if err := os.MkdirAll(dir, 0777); err != nil {
+			t.Fatal(err)
+		}
+		for j := 0; j < 20; j++ {
+			writeFile(t, filepath.Join(dir, "f"+strconv.Itoa(j)+".txt"), "")
+		}
+	}
+
+	before := runtime.NumGoroutine()
+
+	fileListQueue := make(chan *File)
+	walker := NewFileWalker(root, fileListQueue)
+	walker.SetConcurrency(4)
+
+	errChan := make(chan error, 1)
+	go func() { errChan <- walker.Start() }()
+
+	// read a few files then pull the plug from well inside the tree
+	count := 0
+	for range fileListQueue {
+		count++
+		if count == 5 {
+			walker.Terminate()
+		}
+	}
+
+	var err error
+	select {
+	case err = <-errChan:
+	case <-time.After(30 * time.Second):
+		t.Fatal("Start did not return after Terminate, the walk deadlocked")
+	}
+
+	if !errors.Is(err, ErrTerminateWalk) {
+		t.Errorf("expected ErrTerminateWalk after Terminate, got %v", err)
+	}
+
+	if count == 60*20 {
+		t.Error("expected the walk to stop early, but every file was emitted")
+	}
+
+	// the walking goroutines should all have unwound by the time Start returns
+	for i := 0; i < 100; i++ {
+		if runtime.NumGoroutine() <= before+2 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("goroutines leaked after Terminate: %d before, %d after", before, runtime.NumGoroutine())
+}
+
+// TestParallelIgnoreInheritance checks that a directory is matched against
+// exactly its own ancestors' ignore rules and never a sibling's.
+//
+// The ignore rules are accumulated with append and passed down the recursion.
+// Appending to a slice that has spare capacity writes into the shared backing
+// array, so once siblings are walked concurrently two of them can append their
+// own .gitignore into the very same slot. The ancestor chain here is three
+// deep on purpose: that leaves the slice at len 3 cap 4 by the time it reaches
+// the siblings, which is exactly the case where the spare slot exists.
+func TestParallelIgnoreInheritance(t *testing.T) {
+	const siblings = 24
+
+	for attempt := 0; attempt < 5; attempt++ {
+		root := t.TempDir()
+		writeFile(t, filepath.Join(root, ".gitignore"), "never-match-one\n")
+		a := filepath.Join(root, "a")
+		b := filepath.Join(a, "b")
+		if err := os.MkdirAll(b, 0777); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(a, ".gitignore"), "never-match-two\n")
+		writeFile(t, filepath.Join(b, ".gitignore"), "never-match-three\n")
+
+		// each sibling ignores a file only it has, so a sibling that ends up
+		// applying another's rules emits a file it should have ignored
+		for i := 0; i < siblings; i++ {
+			s := filepath.Join(b, "s"+strconv.Itoa(i))
+			if err := os.MkdirAll(s, 0777); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(s, ".gitignore"), "secret"+strconv.Itoa(i)+".txt\n")
+			writeFile(t, filepath.Join(s, "secret"+strconv.Itoa(i)+".txt"), "")
+			writeFile(t, filepath.Join(s, "keep.txt"), "")
+		}
+
+		fileListQueue := make(chan *File, 10_000)
+		walker := NewFileWalker(root, fileListQueue)
+		walker.SetConcurrency(16)
+		go func() { _ = walker.Start() }()
+
+		seen := map[string]bool{}
+		for f := range fileListQueue {
+			seen[filepath.ToSlash(f.Location)] = true
+		}
+
+		for i := 0; i < siblings; i++ {
+			s := filepath.ToSlash(filepath.Join(b, "s"+strconv.Itoa(i)))
+			if !seen[s+"/keep.txt"] {
+				t.Fatalf("s%d/keep.txt was not emitted, it is not ignored by any rule", i)
+			}
+			if seen[s+"/secret"+strconv.Itoa(i)+".txt"] {
+				t.Fatalf("s%d/secret%d.txt was emitted, so s%d did not see its own .gitignore", i, i, i)
+			}
+		}
+	}
+}
+
+// TestZeroValueWalkerDoesNotDeadlock covers a FileWalker built as a struct
+// literal rather than through a constructor, so semaphoreCount is 0. Sizing the
+// semaphore straight from that would give an unbuffered channel that the root
+// blocks on forever, so Start falls back to the package default instead.
+func TestZeroValueWalkerDoesNotDeadlock(t *testing.T) {
+	fileListQueue := make(chan *File, 10_000)
+	curdir, _ := os.Getwd()
+	walker := &FileWalker{
+		fileListQueue: fileListQueue,
+		directory:     curdir,
+		errorsHandler: func(error) bool { return true },
+		skipHandler:   func(string, string, bool, SkipReason) {},
+		osOpen:        os.Open,
+		osReadFile:    os.ReadFile,
+		MaxDepth:      -1,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_ = walker.Start()
+		close(done)
+	}()
+
+	count := 0
+	for range fileListQueue {
+		count++
+	}
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("a zero value FileWalker deadlocked in Start")
+	}
+
+	if count == 0 {
+		t.Error("expected to find at least one file")
 	}
 }
