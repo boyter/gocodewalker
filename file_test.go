@@ -2330,3 +2330,63 @@ func TestWalkRelativeAndAbsoluteRootAgree(t *testing.T) {
 		}
 	}
 }
+
+// TestFileBatchQueueMatchesFileListQueue walks the same tree twice, once
+// handing files over one at a time and once a directory at a time, and checks
+// both produce exactly the same set of files. The batch queue is the walker's
+// fast path, so what it must not do is change which files a walk finds.
+func TestFileBatchQueueMatchesFileListQueue(t *testing.T) {
+	tmp := t.TempDir()
+
+	for _, dir := range []string{"keep/sub", "drop", "nested/keep", "nested/skip", "empty"} {
+		if err := os.MkdirAll(filepath.Join(tmp, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".gitignore"), []byte("drop/\n*.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "nested", ".gitignore"), []byte("skip/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{
+		"root.rs", "keep/a.rs", "keep/sub/b.rs", "keep/sub/c.log",
+		"drop/d.rs", "nested/keep/e.rs", "nested/skip/f.rs",
+	} {
+		if err := os.WriteFile(filepath.Join(tmp, file), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	single := map[string]bool{}
+	queue := make(chan *File, 1000)
+	walker := NewFileWalker(tmp, queue)
+	go func() { _ = walker.Start() }()
+	for f := range queue {
+		single[f.Location] = true
+	}
+
+	batched := map[string]bool{}
+	batchQueue := make(chan []*File, 1000)
+	batchWalker := NewFileWalker(tmp, nil)
+	batchWalker.SetFileBatchQueue(batchQueue)
+	go func() { _ = batchWalker.Start() }()
+	for b := range batchQueue {
+		if len(b) == 0 {
+			t.Error("an empty batch was sent, which is a wasted handover")
+		}
+		for _, f := range b {
+			if batched[f.Location] {
+				t.Errorf("%s was sent twice", f.Location)
+			}
+			batched[f.Location] = true
+		}
+	}
+
+	if len(single) == 0 {
+		t.Fatal("the per file walk found nothing, so the comparison proves nothing")
+	}
+	if !maps.Equal(single, batched) {
+		t.Errorf("batched walk found a different set of files\nper file: %v\nbatched:  %v", single, batched)
+	}
+}

@@ -74,6 +74,7 @@ var semaphoreCount = 8
 
 type FileWalker struct {
 	fileListQueue          chan<- *File
+	fileBatchQueue         chan<- []*File   // set by SetFileBatchQueue, takes precedence over fileListQueue
 	errorsHandler          func(error) bool // If returns true will continue to process where possible, otherwise returns if possible
 	skipHandler            func(path string, name string, isDir bool, reason SkipReason)
 	directory              string
@@ -189,6 +190,28 @@ func NewParallelFileWalker(directories []string, fileListQueue chan<- *File) *Fi
 		IgnoreBinaryFiles:      false,
 		IgnoreBinaryFileBytes:  IgnoreBinaryFileBytes,
 	}
+}
+
+// SetFileBatchQueue switches the walker over to handing its results out one
+// directory at a time rather than one file at a time. When it is set the
+// supplied channel receives a slice of the files each directory yielded, and it
+// rather than the per file queue is the one closed when the walk finishes.
+//
+// This exists because the handover, not the walking, is what limits the walk.
+// Measured on the Linux kernel (90,000 files in 6,000 directories) the walking
+// goroutines spent 44% of their time blocked in the per file channel send at
+// the default concurrency, and 72% of it at a concurrency of 64 — which is why
+// raising the concurrency did not make the walk any faster, the extra
+// goroutines simply queued at the channel. The cost is per send rather than per
+// file, and does not come from the buffer being full: a queue 3,000 times
+// deeper did not change it. Handing over a directory at a time turns roughly
+// 90,000 sends into roughly 6,000.
+//
+// Must be called before Start. Passing nil restores the per file behaviour.
+func (f *FileWalker) SetFileBatchQueue(queue chan<- []*File) {
+	f.walkMutex.Lock()
+	defer f.walkMutex.Unlock()
+	f.fileBatchQueue = queue
 }
 
 // SetConcurrency sets the concurrency when walking
@@ -358,7 +381,11 @@ func (f *FileWalker) Start() error {
 	// has to be waited on here before the queue can be closed.
 	f.walkWg.Wait()
 
-	close(f.fileListQueue)
+	if f.fileBatchQueue != nil {
+		close(f.fileBatchQueue)
+	} else {
+		close(f.fileListQueue)
+	}
 
 	f.walkMutex.Lock()
 	f.isWalking = false
@@ -749,6 +776,11 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		customIgnores = append(customIgnores, gitIgnore)
 	}
 
+	// When a batch queue is in use the files this directory yields are collected
+	// here and handed over in one channel operation at the end of the loop. See
+	// SetFileBatchQueue for why that matters.
+	var batch []*File
+
 	// Process files first to start feeding whatever process is consuming
 	// the output before traversing into directories for more files
 	for _, file := range files {
@@ -934,11 +966,29 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		if shouldIgnore {
 			f.skipHandler(joined, file.Name(), false, skipReason)
 		} else {
-			f.fileListQueue <- &File{
-				Location: joined,
-				Filename: file.Name(),
+			if f.fileBatchQueue != nil {
+				if batch == nil {
+					// one backing array for the whole directory, since the
+					// number of files that survive the filters above is usually
+					// close to the number of entries it holds
+					batch = make([]*File, 0, len(files))
+				}
+				batch = append(batch, &File{
+					Location: joined,
+					Filename: file.Name(),
+				})
+			} else {
+				f.fileListQueue <- &File{
+					Location: joined,
+					Filename: file.Name(),
+				}
 			}
 		}
+	}
+
+	// hand this directory's files over in a single channel operation
+	if len(batch) != 0 {
+		f.fileBatchQueue <- batch
 	}
 
 	// The ignore slices are about to be handed to subdirectories, which each
