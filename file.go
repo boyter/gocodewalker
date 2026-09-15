@@ -105,9 +105,10 @@ type FileWalker struct {
 	IncludeHidden          bool     // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
-	useRawDirents          bool   // may this walk read directories with getdents64 itself (Linux only)
-	gitDirFromEnv          bool   // was $GIT_DIR set when this walk started
-	gitExcludeFromEnv      []byte // contents of $GIT_DIR/info/exclude, read once per walk
+	useRawDirents          bool               // may this walk read directories with getdents64 itself (Linux only)
+	gitDirFromEnv          bool               // was $GIT_DIR set when this walk started
+	gitExcludeFromEnv      []byte             // contents of $GIT_DIR/info/exclude, read once per walk
+	customPatterns         gitignore.Patterns // CustomIgnorePatterns parsed once per walk
 	countingSemaphore      chan bool
 	semaphoreCount         int
 	MaxDepth               int
@@ -344,6 +345,10 @@ func (f *FileWalker) Start() error {
 	// is settled once here rather than in every directory
 	f.useRawDirents = rawDirentsUsable(f.osOpen)
 
+	// CustomIgnorePatterns cannot change while walking either, so the patterns
+	// they hold are parsed once here rather than in every directory.
+	f.compileCustomPatterns()
+
 	if len(f.directories) != 0 {
 		eg := errgroup.Group{}
 		for _, directory := range f.directories {
@@ -428,6 +433,27 @@ func (f *FileWalker) readEnvGitExclude() {
 	if content, err := os.ReadFile(filepath.Join(gitdir, "info", "exclude")); err == nil {
 		f.gitExcludeFromEnv = content
 	}
+}
+
+// compileCustomPatterns parses CustomIgnorePatterns once for the whole walk.
+//
+// The patterns are still anchored at every directory, because that is what
+// CustomIgnorePatterns means and an anchored or recursive pattern gives a
+// different answer at every level. What was needlessly repeated was the
+// lexing and parsing behind that anchoring: the combined patterns were joined,
+// read and parsed afresh in every directory walked, which is one gitignore.New
+// per directory, plus a filepath.Abs -- and so an os.Getwd -- for a directory
+// whose absolute path the walk has already resolved and passed in. Parsing
+// produces the same patterns every time, and they are read only once built, so
+// one parse per walk can be anchored anywhere as often as needed.
+func (f *FileWalker) compileCustomPatterns() {
+	f.customPatterns = gitignore.Patterns{}
+	if len(f.CustomIgnorePatterns) == 0 {
+		return
+	}
+
+	combined := strings.Join(f.CustomIgnorePatterns, "\n")
+	f.customPatterns = gitignore.Compile(strings.NewReader(combined), nil)
 }
 
 // rootGitIgnores returns the seed gitignores for a walk root, which is the
@@ -752,19 +778,54 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		}
 	}
 
-	// If we have custom ignore patterns defined we should concatenate them and treat them as a single gitignore file
-	if len(f.CustomIgnorePatterns) > 0 {
-		customIgnorePatternsCombined := strings.Join(f.CustomIgnorePatterns, "\n")
-
-		abs, err := filepath.Abs(directory)
-		if err != nil {
-			if !f.errorsHandler(err) {
-				return f.stop(err)
+	// If we have custom ignore patterns defined we treat them as a single
+	// gitignore file anchored at this directory, as we always have. Two things
+	// that used to happen here per directory no longer need to.
+	//
+	// The patterns were joined, read and parsed afresh in every directory
+	// walked, which is one gitignore.New per directory -- 6,446 of them for one
+	// pattern on the Linux kernel, against 393 for every .gitignore file the
+	// tree actually contains. Parsing gives the same patterns every time and
+	// they are read only once built, so compileCustomPatterns does it once for
+	// the whole walk and all that is left here is to anchor them, which is a
+	// struct literal. It also asked filepath.Abs, and so os.Getwd, for the
+	// absolute path of a directory the walk had already resolved and passed in.
+	//
+	// The copies also accumulated: every directory appended its own, so a file
+	// ten levels down was tested against ten identically patterned ignores. That
+	// is unavoidable in general, because an anchored or recursive pattern means
+	// something different at each level, but it is pure repetition when every
+	// pattern matches on the trailing name alone, since then the base cannot
+	// change the answer. In that case one copy is anchored here and the
+	// ancestors' copies are left out, which keeps this directory's copy last and
+	// so keeps the precedence a discovered custom ignore file has always had.
+	matchCustomIgnores := customIgnores
+	if f.customPatterns.Len() != 0 {
+		// the walk resolved this directory's absolute path on the way in, so use
+		// it rather than asking the operating system again. It is only unusable
+		// if resolving the walk root failed, in which case fall back to
+		// resolving this directory the way this always did.
+		base := absDirectory
+		if !filepath.IsAbs(base) {
+			abs, err := filepath.Abs(directory)
+			if err != nil {
+				if !f.errorsHandler(err) {
+					return f.stop(err)
+				}
 			}
+			base = abs
 		}
 
-		gitIgnore := gitignore.New(bytes.NewReader([]byte(customIgnorePatternsCombined)), abs, nil)
-		customIgnores = append(customIgnores, gitIgnore)
+		customPatternIgnore := gitignore.NewWithPatterns(f.customPatterns, base, nil)
+		if f.customPatterns.NameOnly() {
+			// Clip forces the append onto a fresh array, so this directory's
+			// matching list is its own and subdirectories, which are handed the
+			// list without this entry, cannot write over it while it is in use
+			matchCustomIgnores = append(slices.Clip(customIgnores), customPatternIgnore)
+		} else {
+			customIgnores = append(customIgnores, customPatternIgnore)
+			matchCustomIgnores = customIgnores
+		}
 	}
 
 	// When a batch queue is in use the files this directory yields are collected
@@ -824,7 +885,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			}
 		}
 
-		for _, ignore := range customIgnores {
+		for _, ignore := range matchCustomIgnores {
 			// same rules as above
 			if m := ignore.MatchIsDir(matchPath, false); m != nil {
 				shouldIgnore = m.Ignore()
@@ -1046,7 +1107,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 				}
 			}
 		}
-		for _, ignore := range customIgnores {
+		for _, ignore := range matchCustomIgnores {
 			// same rules as above
 			if m := ignore.MatchIsDir(matchPath, true); m != nil {
 				shouldIgnore = m.Ignore()

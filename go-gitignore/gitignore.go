@@ -102,12 +102,74 @@ func New(r io.Reader, base string, errors func(Error) bool) GitIgnore {
 		_errors = func(e Error) bool { return true }
 	}
 
-	// extract the patterns from the reader
-	_parser := NewParser(r, _errors)
-	_patterns := _parser.Parse()
-
-	return &ignore{_base: base, _pattern: fastPatterns(_patterns), _errors: _errors}
+	return NewWithPatterns(Compile(r, _errors), base, _errors)
 } // New()
+
+// Patterns is a set of .gitignore patterns that have been parsed but not yet
+// anchored to any base directory. The zero value holds no patterns.
+//
+// Patterns are read only once built, so one Patterns may be anchored by any
+// number of NewWithPatterns calls, at any bases, and matched against
+// concurrently.
+type Patterns struct {
+	_pattern  []fastPattern
+	_nameOnly bool
+} // Patterns{}
+
+// Compile parses the patterns in r without anchoring them to a base directory.
+// It exists so that one set of patterns can be applied at more than one base
+// without being lexed and parsed again for each: parsing is by far the
+// expensive half of New, while anchoring is a struct literal.
+func Compile(r io.Reader, errors func(Error) bool) Patterns {
+	if errors == nil {
+		errors = func(e Error) bool { return true }
+	}
+
+	_patterns := fastPatterns(NewParser(r, errors).Parse())
+
+	return Patterns{_pattern: _patterns, _nameOnly: nameOnly(_patterns)}
+} // Compile()
+
+// Len returns the number of patterns.
+func (p Patterns) Len() int { return len(p._pattern) }
+
+// NameOnly reports whether every pattern here is matched against the trailing
+// name of a path alone, and so gives the same answer wherever it is anchored.
+//
+// Only an unanchored name pattern qualifies: it looks at nothing but the last
+// component of the path relative to the base, and that component is the same
+// whichever ancestor directory the base happens to be. Anchored, path and "**"
+// patterns are all matched against the whole relative path, so moving the base
+// changes what they match.
+//
+// It lets a caller that would otherwise anchor one set of patterns at every
+// directory it walks anchor it once instead, since the extra copies could only
+// ever return what the one already there returned.
+func (p Patterns) NameOnly() bool { return p._nameOnly }
+
+// nameOnly answers NameOnly once, when the patterns are compiled, rather than
+// rescanning them every time a caller asks.
+func nameOnly(patterns []fastPattern) bool {
+	for _, _pattern := range patterns {
+		_name, _ok := _pattern.(*name)
+		if !_ok || _name._anchored {
+			return false
+		}
+	}
+
+	return true
+} // nameOnly()
+
+// NewWithPatterns returns a GitIgnore that applies already parsed patterns, as
+// returned by Compile, as though they were a .gitignore file in the base
+// directory.
+func NewWithPatterns(patterns Patterns, base string, errors func(Error) bool) GitIgnore {
+	if errors == nil {
+		errors = func(e Error) bool { return true }
+	}
+
+	return &ignore{_base: base, _pattern: patterns._pattern, _errors: errors}
+} // NewWithPatterns()
 
 // NewFromFile creates a GitIgnore instance from the given file. An error
 // will be returned if file cannot be opened or its absolute path determined.
