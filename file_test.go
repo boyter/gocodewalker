@@ -2437,3 +2437,104 @@ func TestFileBatchQueueMatchesFileListQueue(t *testing.T) {
 		t.Errorf("batched walk found a different set of files\nper file: %v\nbatched:  %v", single, batched)
 	}
 }
+
+// TestGitInfoExcludePrecedence pins info/exclude below .gitignore, which is the
+// order gitignore(5) gives and the order git actually applies. Checked against
+// git 2.55 on the same two fixtures:
+//
+//	.gitignore "!foo.txt" + info/exclude "foo.txt"  -> git does not ignore foo.txt
+//	.gitignore "bar.txt"  + info/exclude "!bar.txt" -> git ignores bar.txt
+//
+// The walker used to read info/exclude after the directory's own .gitignore,
+// which ranked it above and got both of these backwards.
+func TestGitInfoExcludePrecedence(t *testing.T) {
+	testCases := []struct {
+		Name      string
+		GitIgnore string
+		Exclude   string
+		GitDirEnv bool
+		Expected  []string
+	}{
+		{
+			// .gitignore un-ignores what info/exclude ignores, so it survives
+			Name:      "gitignore un-ignores what exclude ignores",
+			GitIgnore: "!foo.txt\n",
+			Exclude:   "foo.txt\n",
+			Expected:  []string{"bar.txt", "foo.txt"},
+		},
+		{
+			// .gitignore ignores what info/exclude un-ignores, so it goes
+			Name:      "gitignore ignores what exclude un-ignores",
+			GitIgnore: "bar.txt\n",
+			Exclude:   "!bar.txt\n",
+			Expected:  []string{"foo.txt"},
+		},
+		{
+			// nothing to disagree about: info/exclude still applies
+			Name:      "exclude alone still applies",
+			GitIgnore: "\n",
+			Exclude:   "foo.txt\nbar.txt\n",
+			Expected:  nil,
+		},
+		// the same two, reached through $GIT_DIR rather than a discovered .git.
+		// That path has always seeded the exclude file beneath everything, so a
+		// repository must not answer differently depending on whether $GIT_DIR
+		// happens to be set
+		{
+			Name:      "gitignore un-ignores what exclude ignores, via GIT_DIR",
+			GitIgnore: "!foo.txt\n",
+			Exclude:   "foo.txt\n",
+			GitDirEnv: true,
+			Expected:  []string{"bar.txt", "foo.txt"},
+		},
+		{
+			Name:      "gitignore ignores what exclude un-ignores, via GIT_DIR",
+			GitIgnore: "bar.txt\n",
+			Exclude:   "!bar.txt\n",
+			GitDirEnv: true,
+			Expected:  []string{"foo.txt"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			testDir, err := os.MkdirTemp(os.TempDir(), randSeq(10))
+			if err != nil {
+				t.Fatal(err)
+			}
+			gitDir := filepath.Join(testDir, ".git")
+			if err := os.MkdirAll(filepath.Join(gitDir, "info"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(gitDir, "info", "exclude"), []byte(tc.Exclude), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(tc.GitIgnore), 0644); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"foo.txt", "bar.txt"} {
+				if err := os.WriteFile(filepath.Join(testDir, name), []byte("x"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if tc.GitDirEnv {
+				t.Setenv("GIT_DIR", gitDir)
+			}
+
+			fileListQueue := make(chan *File, 10)
+			walker := NewFileWalker(testDir, fileListQueue)
+			go func() { _ = walker.Start() }()
+
+			var got []string
+			for f := range fileListQueue {
+				got = append(got, f.Filename)
+			}
+			sort.Strings(got)
+
+			if strings.Join(got, ",") != strings.Join(tc.Expected, ",") {
+				t.Errorf("got [%s], want [%s]", strings.Join(got, ","), strings.Join(tc.Expected, ","))
+			}
+		})
+	}
+}

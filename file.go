@@ -653,6 +653,33 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		}
 	}
 
+	// info/exclude only exists at a repository root, so blindly trying to read it
+	// in every directory was one guaranteed failed open per directory on any large
+	// tree, 6,052 of 6,053 of them on the linux kernel. The directory listing is
+	// already in hand and already tells us whether this is a repository root, the
+	// same way .gitignore is found below, so only look when there is a .git entry
+	// to look inside. When $GIT_DIR is set it overrides the .git entry entirely,
+	// as it always has, and has already been read once by readEnvGitExclude.
+	//
+	// This is read before this directory's own .gitignore so that it ranks below
+	// it. gitignore(5) puts info/exclude beneath every .gitignore, and git agrees
+	// in both directions: with "!foo" in .gitignore and "foo" in info/exclude the
+	// file is not ignored, and with "bar" in .gitignore and "!bar" in
+	// info/exclude it is. Reading it afterwards ranked it above, which also made
+	// a repository answer differently depending on whether $GIT_DIR happened to
+	// be set, since that path has always seeded it beneath everything.
+	if !f.IgnoreGitIgnore && !f.gitDirFromEnv && gitEntry != nil {
+		if content, err := os.ReadFile(gitInfoExcludePath(directory, gitEntry)); err == nil {
+			abs, err := filepath.Abs(directory)
+			if err == nil {
+				gitExclude := gitignore.New(bytes.NewReader(content), abs, nil)
+				if gitExclude != nil {
+					gitignores = append(gitignores, gitExclude)
+				}
+			}
+		}
+	}
+
 	// Pull out all ignore, gitignore and gitmodule files and add them
 	// to out collection of gitignores to be applied for this pass
 	// and any subdirectories
@@ -759,25 +786,6 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			}
 		}
 	}
-	// info/exclude only exists at a repository root, so blindly trying to read it
-	// in every directory was one guaranteed failed open per directory on any large
-	// tree, 6,052 of 6,053 of them on the linux kernel. The directory listing is
-	// already in hand and already tells us whether this is a repository root, the
-	// same way .gitignore is found above, so only look when there is a .git entry
-	// to look inside. When $GIT_DIR is set it overrides the .git entry entirely,
-	// as it always has, and has already been read once by readEnvGitExclude.
-	if !f.IgnoreGitIgnore && !f.gitDirFromEnv && gitEntry != nil {
-		if content, err := os.ReadFile(gitInfoExcludePath(directory, gitEntry)); err == nil {
-			abs, err := filepath.Abs(directory)
-			if err == nil {
-				gitExclude := gitignore.New(bytes.NewReader(content), abs, nil)
-				if gitExclude != nil {
-					gitignores = append(gitignores, gitExclude)
-				}
-			}
-		}
-	}
-
 	// If we have custom ignore patterns defined we treat them as a single
 	// gitignore file anchored at this directory, as we always have. Two things
 	// that used to happen here per directory no longer need to.
