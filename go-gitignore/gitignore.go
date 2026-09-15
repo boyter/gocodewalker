@@ -61,9 +61,34 @@ type GitIgnore interface {
 // ignore is the implementation of a .gitignore file.
 type ignore struct {
 	_base    string
-	_pattern []Pattern
+	_pattern []fastPattern
 	_errors  func(Error) bool
 }
+
+// foreign adapts a Pattern that does not offer the internal precomputed form.
+// Parser returns only the patterns built by this package, all of which do, but
+// Parser is an exported interface and New will take an implementation of it, so
+// this keeps the conversion total.
+type foreign struct{ Pattern }
+
+func (f foreign) matchInfo(info pathInfo, isdir bool) bool {
+	return f.Match(info.path, isdir)
+} // matchInfo()
+
+// fastPatterns converts a parsed pattern list into the internal form, so that
+// Relative can call matchInfo directly rather than type asserting once per
+// pattern per path.
+func fastPatterns(patterns []Pattern) []fastPattern {
+	_fast := make([]fastPattern, len(patterns))
+	for _i, _pattern := range patterns {
+		if _f, _ok := _pattern.(fastPattern); _ok {
+			_fast[_i] = _f
+		} else {
+			_fast[_i] = foreign{_pattern}
+		}
+	}
+	return _fast
+} // fastPatterns()
 
 // NewGitIgnore creates a new GitIgnore instance from the patterns listed in t,
 // representing a .gitignore file in the base directory. If errors is given, it
@@ -81,7 +106,7 @@ func New(r io.Reader, base string, errors func(Error) bool) GitIgnore {
 	_parser := NewParser(r, _errors)
 	_patterns := _parser.Parse()
 
-	return &ignore{_base: base, _pattern: _patterns, _errors: _errors}
+	return &ignore{_base: base, _pattern: fastPatterns(_patterns), _errors: _errors}
 } // New()
 
 // NewFromFile creates a GitIgnore instance from the given file. An error
@@ -383,11 +408,20 @@ func (i *ignore) Relative(path string, isdir bool) Match {
 		_rel = filepath.ToSlash(_rel)
 	}
 
+	// derive the base name of the path (and whether it has a separator at all)
+	// once for the whole pattern list. Every non-anchored name pattern is
+	// matched against the base name and nothing else, so without this each of
+	// them scans back through the path for the last separator to arrive at the
+	// same answer. An ignore file with a few hundred name patterns in it, as
+	// the Linux kernel's root .gitignore has, did that few hundred times per
+	// file walked.
+	_info := newPathInfo(_rel)
+
 	// iterate over the patterns for this ignore file
 	//      - iterate in reverse, since later patterns overwrite earlier
 	for _i := len(i._pattern) - 1; _i >= 0; _i-- {
 		_pattern := i._pattern[_i]
-		if _pattern.Match(_rel, isdir) {
+		if _pattern.matchInfo(_info, isdir) {
 			return _pattern
 		}
 	}

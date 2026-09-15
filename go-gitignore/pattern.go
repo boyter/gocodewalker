@@ -21,6 +21,59 @@ type Pattern interface {
 	Match(string, bool) bool
 }
 
+// pathInfo carries the values derived from a path that more than one pattern
+// in an ignore file would otherwise each recompute for itself. A .gitignore
+// holds one pattern list but is asked about one path at a time, so anything
+// that depends only on the path can be worked out once for the whole list
+// rather than once per pattern. The Linux kernel's ignore rules put several
+// hundred name patterns in scope at the root of the tree, and every one of
+// them wants the same base name.
+type pathInfo struct {
+	// path is the path as handed to Relative, relative to the ignore file's
+	// base directory and in slash form.
+	path string
+
+	// base is the last component of path, the only part a non-anchored name
+	// pattern is ever matched against.
+	base string
+
+	// hasSep records whether path contains a '/', which is what tells an
+	// anchored name pattern that it cannot match.
+	hasSep bool
+}
+
+// newPathInfo derives the per-path values from path. It reproduces exactly what
+// name.Match works out for itself, so the two remain interchangeable.
+func newPathInfo(path string) pathInfo {
+	// the base name of the path. filepath.Split was previously used here, but
+	// it scans backwards a byte at a time through os.IsPathSeparator, so for a
+	// tree the size of the Linux kernel it was several percent of the whole
+	// walk. The GOOS test is a compile time constant, so on Unix this is a
+	// single vectorised LastIndexByte.
+	_i := strings.LastIndexByte(path, '/')
+	_hasSep := _i >= 0
+	if runtime.GOOS == "windows" {
+		if _j := strings.LastIndexByte(path, '\\'); _j > _i {
+			_i = _j
+		}
+	}
+
+	return pathInfo{path: path, base: path[_i+1:], hasSep: _hasSep}
+} // newPathInfo()
+
+// fastPattern is the internal matching interface. It is Pattern with the
+// addition of matchInfo, which takes the already derived pathInfo instead of
+// re-deriving it. Pattern is exported, so its method set is left alone and this
+// sits alongside it; ignore stores its patterns as fastPattern so the loop in
+// Relative does not pay for a type assertion per pattern.
+type fastPattern interface {
+	Pattern
+
+	// matchInfo is Match, given the pathInfo for the path being tested. It
+	// must agree with Match(info.path, isdir) for every path and pattern.
+	matchInfo(info pathInfo, isdir bool) bool
+}
+
 // pattern is the base implementation of a .gitignore pattern
 type pattern struct {
 	_negated   bool
@@ -230,34 +283,30 @@ func (p *pattern) name(tokens []*Token) Pattern {
 // Match will return false. The matching is performed by fnmatch(). It
 // is assumed path is relative to the base path of the owning GitIgnore.
 func (n *name) Match(path string, isdir bool) bool {
+	return n.matchInfo(newPathInfo(path), isdir)
+} // Match()
+
+// matchInfo is Match with the base name of the path already derived. It is the
+// form used by the pattern loop in Relative, where the whole list of patterns
+// shares one pathInfo.
+func (n *name) matchInfo(info pathInfo, isdir bool) bool {
 	// are we expecting a directory?
 	if n._directory && !isdir {
 		return false
 	}
 
 	// determine the string to match against
-	_target := path
-	if !n._anchored {
-		// the base name of the path. filepath.Split was previously used here,
-		// but it scans backwards a byte at a time through os.IsPathSeparator
-		// while this runs once per pattern per path, so for a tree the size of
-		// the Linux kernel it was several percent of the whole walk. The
-		// GOOS test is a compile time constant, so on Unix this is a single
-		// vectorised LastIndexByte.
-		i := strings.LastIndexByte(path, '/')
-		if runtime.GOOS == "windows" {
-			if j := strings.LastIndexByte(path, '\\'); j > i {
-				i = j
-			}
-		}
-		_target = path[i+1:]
-	} else if strings.ContainsRune(_target, '/') {
+	_target := info.base
+	if n._anchored {
 		// an anchored name pattern is a single path component anchored to the
 		// base directory, so it can only ever match a single-segment path. A
 		// multi-segment target (e.g. "keep/sub" against "/*/") must not match,
 		// otherwise glob patterns such as "*" would incorrectly span the '/'
 		// separator and ignore nested directories that git keeps.
-		return false
+		if info.hasSep {
+			return false
+		}
+		_target = info.path
 	}
 
 	// fast-path dispatch avoids expensive fnmatch for simple patterns
@@ -275,7 +324,7 @@ func (n *name) Match(path string, isdir bool) bool {
 	default:
 		return fnmatch.Match(n._fnmatch, _target, 0)
 	}
-} // Match()
+} // matchInfo()
 
 //
 // path patterns
@@ -310,6 +359,12 @@ func (p *path) Match(path string, isdir bool) bool {
 
 	return fnmatch.Match(p._fnmatch, path, fnmatch.FNM_PATHNAME)
 } // Match()
+
+// matchInfo is Match for path patterns. A path pattern is matched against the
+// whole path, so there is nothing precomputed for it to use.
+func (p *path) matchInfo(info pathInfo, isdir bool) bool {
+	return p.Match(info.path, isdir)
+} // matchInfo()
 
 //
 // "any" patterns
@@ -383,6 +438,14 @@ func (a *any) Match(path string, isdir bool) bool {
 	return a.matchFrom(path, 0, a._words)
 } // Match()
 
+// matchInfo is Match for "any" patterns. An "any" pattern walks the whole path
+// component by component, so the derived base name is of no use to it. There is
+// nothing else left to hoist here either: walking the components from a byte
+// offset is what removed the per-path allocation these patterns used to make.
+func (a *any) matchInfo(info pathInfo, isdir bool) bool {
+	return a.Match(info.path, isdir)
+} // matchInfo()
+
 // matchFrom performs the recursive matching for 'any' patterns over the
 // components of path beginning at byte offset off. An 'any' token '**' may
 // match any path component, or no path component.
@@ -447,3 +510,8 @@ func (a *any) matchFrom(path string, off int, tokens []anyToken) bool {
 var _ Pattern = &name{}
 var _ Pattern = &path{}
 var _ Pattern = &any{}
+
+// ensure the patterns also offer the internal precomputed form
+var _ fastPattern = &name{}
+var _ fastPattern = &path{}
+var _ fastPattern = &any{}
