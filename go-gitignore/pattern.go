@@ -5,6 +5,7 @@ package gitignore
 import (
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/danwakefield/fnmatch"
 )
@@ -163,6 +164,40 @@ func containsGlob(s string) bool {
 	return strings.ContainsAny(s, "*?[\\")
 }
 
+// classifyGlob buckets an fnmatch expression that will be matched against a
+// single path component, returning the match type and the literal it should be
+// compared against.
+func classifyGlob(fn string) (matchType, string) {
+	switch {
+	case strings.ContainsRune(fn, utf8.RuneError):
+		// fnmatch compares decoded runes, and every byte of invalid UTF-8 in
+		// the target decodes to U+FFFD, so a U+FFFD in the pattern -- which is
+		// what the lexer produces for invalid UTF-8 in the .gitignore file --
+		// matches any invalid byte. Byte comparison cannot reproduce that, so
+		// leave these to fnmatch.
+		return matchComplex, ""
+	case !containsGlob(fn):
+		// exact literal (e.g. "node_modules", ".DS_Store")
+		return matchExact, fn
+	case fn == "*":
+		// bare "*" matches any name, so there is nothing to compare
+		return matchAny, ""
+	case fn[0] == '*' && !containsGlob(fn[1:]):
+		// suffix match (e.g. "*.o", "*.pyc")
+		return matchSuffix, fn[1:]
+	case fn[len(fn)-1] == '*' && !containsGlob(fn[:len(fn)-1]):
+		// prefix match (e.g. ".*", "vmlinuz*") — very common, and the Linux
+		// kernel's root .gitignore leads with ".*", which was previously
+		// evaluated by fnmatch for every file in the tree
+		return matchPrefix, fn[:len(fn)-1]
+	case len(fn) > 2 && fn[0] == '*' && fn[len(fn)-1] == '*' && !containsGlob(fn[1:len(fn)-1]):
+		// contains match (e.g. "*.o.*")
+		return matchContains, fn[1 : len(fn)-1]
+	default:
+		return matchComplex, ""
+	}
+} // classifyGlob()
+
 // name returns a Pattern designed to match file or directory names, with no
 // path elements.
 func (p *pattern) name(tokens []*Token) Pattern {
@@ -171,33 +206,9 @@ func (p *pattern) name(tokens []*Token) Pattern {
 	// Classify the fnmatch expression for fast-path dispatch. A name pattern is
 	// only ever matched against a single path component, which never contains a
 	// '/', so an fnmatch '*' here is equivalent to "any run of characters" and
-	// the prefix/suffix/contains forms below are exact substitutions for it.
-	fn := p._fnmatch
-	switch {
-	case !containsGlob(fn):
-		// exact literal (e.g. "node_modules", ".DS_Store")
-		n._matchType = matchExact
-		n._literal = fn
-	case fn == "*":
-		// bare "*" matches any name, so there is nothing to compare
-		n._matchType = matchAny
-	case fn[0] == '*' && !containsGlob(fn[1:]):
-		// suffix match (e.g. "*.o", "*.pyc")
-		n._matchType = matchSuffix
-		n._literal = fn[1:]
-	case fn[len(fn)-1] == '*' && !containsGlob(fn[:len(fn)-1]):
-		// prefix match (e.g. ".*", "vmlinuz*") — very common, and the Linux
-		// kernel's root .gitignore leads with ".*", which was previously
-		// evaluated by fnmatch for every file in the tree
-		n._matchType = matchPrefix
-		n._literal = fn[:len(fn)-1]
-	case len(fn) > 2 && fn[0] == '*' && fn[len(fn)-1] == '*' && !containsGlob(fn[1:len(fn)-1]):
-		// contains match (e.g. "*.o.*")
-		n._matchType = matchContains
-		n._literal = fn[1 : len(fn)-1]
-	default:
-		n._matchType = matchComplex
-	}
+	// the prefix/suffix/contains forms classifyGlob picks are exact
+	// substitutions for it.
+	n._matchType, n._literal = classifyGlob(p._fnmatch)
 
 	return n
 } // name()
