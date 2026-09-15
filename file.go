@@ -844,58 +844,10 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			matchPath = absDirectory + "/" + file.Name()
 		}
 
-		// Global ignore files supplied by path are the lowest priority, so they
-		// are checked first and anything discovered while walking can override them
-		for _, ignore := range globalIgnores {
-			if m := ignore.MatchIsDir(matchPath, false); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonGlobalIgnore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-
-		for _, ignore := range gitignores {
-			// we have the following situations
-			// 1. none of the gitignores match
-			// 2. one or more match
-			// for #1 this means we should include the file
-			// for #2 this means the last one wins since it should be the most correct
-			if m := ignore.MatchIsDir(matchPath, false); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonGitignore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-
-		for _, ignore := range ignores {
-			// same rules as above
-			if m := ignore.MatchIsDir(matchPath, false); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonIgnoreFile
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-
-		for _, ignore := range matchCustomIgnores {
-			// same rules as above
-			if m := ignore.MatchIsDir(matchPath, false); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonCustomIgnore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
+		// Ignore rules are checked highest priority first and stop at the first
+		// match, which is the match the lowest-priority-first scan this replaced
+		// would have ended on. Files are not matched against .gitmodules.
+		shouldIgnore, skipReason = ignoreMatch(matchPath, false, globalIgnores, gitignores, ignores, matchCustomIgnores, nil)
 
 		if len(f.IncludeFilename) != 0 {
 			// include files
@@ -1067,68 +1019,10 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 			matchPath = absDirectory + "/" + dir.Name()
 		}
 
-		// Check against the ignore files we have if the file we are looking at
-		// should be ignored
-		// It is safe to always call this because the gitignores will not be added
-		// in previous steps
-		for _, ignore := range globalIgnores {
-			if m := ignore.MatchIsDir(matchPath, true); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonGlobalIgnore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-		for _, ignore := range gitignores {
-			// we have the following situations
-			// 1. none of the gitignores match
-			// 2. one or more match
-			// for #1 this means we should include the file
-			// for #2 this means the last one wins since it should be the most correct
-			if m := ignore.MatchIsDir(matchPath, true); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonGitignore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-		for _, ignore := range ignores {
-			// same rules as above
-			if m := ignore.MatchIsDir(matchPath, true); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonIgnoreFile
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-		for _, ignore := range matchCustomIgnores {
-			// same rules as above
-			if m := ignore.MatchIsDir(matchPath, true); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonCustomIgnore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
-		for _, ignore := range moduleIgnores {
-			// same rules as above
-			if m := ignore.MatchIsDir(matchPath, true); m != nil {
-				shouldIgnore = m.Ignore()
-				if shouldIgnore {
-					skipReason = SkipReasonModuleIgnore
-				} else {
-					skipReason = ""
-				}
-			}
-		}
+		// Ignore rules are checked highest priority first and stop at the first
+		// match, as above. Directories are additionally matched against the
+		// submodule paths from .gitmodules, which outrank everything else.
+		shouldIgnore, skipReason = ignoreMatch(matchPath, true, globalIgnores, gitignores, ignores, matchCustomIgnores, moduleIgnores)
 
 		// start by saying we didn't find it then check each possible
 		// choice to see if we did find it
