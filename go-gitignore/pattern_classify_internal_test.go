@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/danwakefield/fnmatch"
+	"github.com/boyter/gocodewalker/go-gitignore/internal/fnmatch"
 )
 
 // classified builds the name matcher classifyGlob would produce for fn, without

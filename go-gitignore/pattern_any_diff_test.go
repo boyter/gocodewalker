@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/danwakefield/fnmatch"
+	"github.com/boyter/gocodewalker/go-gitignore/internal/fnmatch"
 )
 
 // anyPatterns and anyPaths are the corpus for the differential test below. The

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/danwakefield/fnmatch"
+	"github.com/boyter/gocodewalker/go-gitignore/internal/fnmatch"
 )
 
 // Pattern represents per-line patterns within a .gitignore file

@@ -7,7 +7,7 @@ import (
 
 	gitignore "github.com/boyter/gocodewalker/go-gitignore"
 
-	"github.com/danwakefield/fnmatch"
+	"github.com/boyter/gocodewalker/go-gitignore/internal/fnmatch"
 )
 
 // The fast paths that answer a name pattern without calling fnmatch compare

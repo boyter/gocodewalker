@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/danwakefield/fnmatch"
+	"github.com/boyter/gocodewalker/go-gitignore/internal/fnmatch"
 )
 
 // ---------------------------------------------------------------------------
