@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/danwakefield/fnmatch"
+	"github.com/boyter/gocodewalker/go-gitignore/internal/fnmatch"
 
 	"github.com/boyter/gocodewalker/go-gitignore"
 )
