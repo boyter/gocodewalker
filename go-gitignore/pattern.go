@@ -58,11 +58,23 @@ type path struct {
 	_depth int
 } // path{}
 
+// anyToken is a single non-separator token of an "any" pattern, pre-resolved
+// into the form the matcher needs. Token.Token() builds a string from a []rune
+// on every call, and the matcher calls it once per path component per pattern,
+// so the string is built once here instead.
+type anyToken struct {
+	_any       bool // true for the "**" token
+	_word      string
+	_matchType matchType
+	_literal   string
+} // anyToken{}
+
 // any represents a pattern that contains at least one "any" token "**"
 // allowing for recursive matching.
 type any struct {
 	pattern
 	_tokens []*Token
+	_words  []anyToken
 } // any{}
 
 // NewPattern returns a Pattern from the ordered slice of Tokens. The tokens are
@@ -315,8 +327,44 @@ func (p *pattern) any(tokens []*Token) Pattern {
 		}
 	}
 
-	return &any{*p, _tokens}
+	// pre-resolve each token into the form the matcher wants: the token word as
+	// a string (Token() otherwise rebuilds it from []rune on every call), and
+	// the same glob classification the name patterns use. A token is only ever
+	// matched against a single path component, which contains no '/', so an
+	// fnmatch '*' is just "any run of characters" and the literal forms below
+	// are exact substitutions for it -- the same argument that makes the name
+	// fast paths correct, and FNM_PATHNAME makes no difference for the same
+	// reason.
+	_words := make([]anyToken, len(_tokens))
+	for i, _token := range _tokens {
+		_word := _token.Token()
+		_words[i] = anyToken{
+			_any:  _token.Type == ANY,
+			_word: _word,
+		}
+		_words[i]._matchType, _words[i]._literal = classifyGlob(_word)
+	}
+
+	return &any{*p, _tokens, _words}
 } // any()
+
+// match reports whether a single path component matches this token.
+func (t *anyToken) match(component string) bool {
+	switch t._matchType {
+	case matchExact:
+		return component == t._literal
+	case matchSuffix:
+		return strings.HasSuffix(component, t._literal)
+	case matchPrefix:
+		return strings.HasPrefix(component, t._literal)
+	case matchContains:
+		return strings.Contains(component, t._literal)
+	case matchAny:
+		return true
+	default:
+		return fnmatch.Match(t._word, component, fnmatch.FNM_PATHNAME)
+	}
+} // match()
 
 // Match returns true if the given path matches the any pattern. If the
 // pattern is meant for directories only, and the path is not a directory,
@@ -329,26 +377,46 @@ func (a *any) Match(path string, isdir bool) bool {
 		return false
 	}
 
-	// split the path into components
-	_parts := strings.Split(path, string(_SEPARATOR))
-
-	// attempt to match the parts against the pattern tokens
-	return a.match(_parts, a._tokens)
+	// walk the path components in place, rather than splitting the path into a
+	// slice: an 'any' pattern is evaluated against every entry of the tree, and
+	// the split was an allocation per pattern per path.
+	return a.matchFrom(path, 0, a._words)
 } // Match()
 
-// match performs the recursive matching for 'any' patterns. An 'any'
-// token '**' may match any path component, or no path component.
-func (a *any) match(path []string, tokens []*Token) bool {
+// matchFrom performs the recursive matching for 'any' patterns over the
+// components of path beginning at byte offset off. An 'any' token '**' may
+// match any path component, or no path component.
+//
+// The offset encodes the remaining components the way the []string it replaces
+// did: off <= len(path) means at least one component remains (off == len(path)
+// is the empty trailing component of a path ending in '/', which is what
+// strings.Split yields), and off > len(path) means every component has been
+// consumed.
+func (a *any) matchFrom(path string, off int, tokens []anyToken) bool {
+	_empty := off > len(path)
+
 	// if we have no more tokens, then we have matched this path
 	// if there are also no more path elements, otherwise there's no match
 	if len(tokens) == 0 {
-		return len(path) == 0
+		return _empty
+	}
+
+	// the current path component, and the offset of the one after it
+	var _component string
+	_next := off
+	if !_empty {
+		if i := strings.IndexByte(path[off:], byte(_SEPARATOR)); i >= 0 {
+			_component = path[off : off+i]
+			_next = off + i + 1
+		} else {
+			_component = path[off:]
+			_next = len(path) + 1
+		}
 	}
 
 	// what token are we trying to match?
-	_token := tokens[0]
-	switch _token.Type {
-	case ANY:
+	_token := &tokens[0]
+	if _token._any {
 		// A trailing "**" matches everything *inside* the directory named
 		// by the preceding tokens, so it must consume at least one path
 		// component: gitignore(5) gives "abc/**" as matching all files
@@ -356,28 +424,24 @@ func (a *any) match(path []string, tokens []*Token) bool {
 		// embedded "**" is the opposite case and may match no component at
 		// all, so "**/foo" matches "foo" and "a/**/b" matches "a/b".
 		if len(tokens) == 1 {
-			return len(path) != 0
+			return !_empty
 		}
-		if len(path) == 0 {
-			return a.match(path, tokens[1:])
+		if _empty {
+			return a.matchFrom(path, off, tokens[1:])
 		}
-		return a.match(path, tokens[1:]) || a.match(path[1:], tokens)
+		return a.matchFrom(path, off, tokens[1:]) || a.matchFrom(path, _next, tokens)
+	}
 
-	default:
-		// if we have a non-ANY token, then we must have a non-empty path
-		if len(path) != 0 {
-			// if the current path element matches this token,
-			// we match if the remainder of the path matches the
-			// remaining tokens
-			if fnmatch.Match(_token.Token(), path[0], fnmatch.FNM_PATHNAME) {
-				return a.match(path[1:], tokens[1:])
-			}
-		}
+	// if we have a non-ANY token, then we must have a non-empty path; if the
+	// current path element matches this token, we match if the remainder of the
+	// path matches the remaining tokens
+	if !_empty && _token.match(_component) {
+		return a.matchFrom(path, _next, tokens[1:])
 	}
 
 	// if we are here, then we have no match
 	return false
-} // match()
+} // matchFrom()
 
 // ensure the patterns confirm to the Pattern interface
 var _ Pattern = &name{}
