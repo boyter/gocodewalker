@@ -59,20 +59,11 @@ func FuzzClassifyGlobAgreesWithFnmatch(f *testing.F) {
 			t.Skip()
 		}
 
-		// fnmatch backtracks over every '*' in the expression, and its cost
-		// grows with the cube of the target length: a nine character expression
-		// against a two thousand character name takes about nine seconds. That
-		// is a real pre-existing problem in the vendored fnmatch, but it is not
-		// this classifier's, and left unbounded it is all the fuzzer finds.
+		// fnmatch backtracks over every '*' in the expression, so its cost
+		// still grows with the square of the target length even now that the
+		// recursion is memoised. That bound is tested where it is set; left
+		// unbounded here it is all the fuzzer would find.
 		if len(fn) > 64 || len(target) > 128 {
-			t.Skip()
-		}
-
-		// an unterminated character class panics inside the vendored fnmatch.
-		// That is a real pre-existing bug, but it is a bug in fnmatch's parser
-		// rather than a disagreement with the fast paths, and it would mask
-		// everything else this fuzzer is looking for.
-		if strings.ContainsAny(fn, "[\\") {
 			t.Skip()
 		}
 
