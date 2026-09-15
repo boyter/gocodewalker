@@ -105,6 +105,7 @@ type FileWalker struct {
 	IncludeHidden          bool     // Should hidden files and directories be included/walked
 	osOpen                 func(name string) (*os.File, error)
 	osReadFile             func(name string) ([]byte, error)
+	useRawDirents          bool   // may this walk read directories with getdents64 itself (Linux only)
 	gitDirFromEnv          bool   // was $GIT_DIR set when this walk started
 	gitExcludeFromEnv      []byte // contents of $GIT_DIR/info/exclude, read once per walk
 	countingSemaphore      chan bool
@@ -337,6 +338,11 @@ func (f *FileWalker) Start() error {
 	// once per directory, and when it is set the exclude file it names is read
 	// once here as well rather than re-read in every directory below.
 	f.readEnvGitExclude()
+
+	// whether directories can be listed with getdents64 directly cannot change
+	// while walking either, and answering it means a reflect comparison, so it
+	// is settled once here rather than in every directory
+	f.useRawDirents = rawDirentsUsable(f.osOpen)
 
 	if len(f.directories) != 0 {
 		eg := errgroup.Group{}
@@ -589,22 +595,7 @@ func (f *FileWalker) walkDirectoryRecursive(iteration int,
 		return f.firstError()
 	}
 
-	d, err := f.osOpen(directory)
-	if err != nil {
-		// nothing we can do with this so return nil and process as best we can
-		if f.errorsHandler(err) {
-			return nil
-		}
-		return f.stop(err)
-	}
-	defer func(d *os.File) {
-		err := d.Close()
-		if err != nil {
-			f.errorsHandler(err)
-		}
-	}(d)
-
-	foundFiles, err := d.ReadDir(-1)
+	foundFiles, err := f.readDirectory(directory)
 	if err != nil {
 		// nothing we can do with this so return nil and process as best we can
 		if f.errorsHandler(err) {
